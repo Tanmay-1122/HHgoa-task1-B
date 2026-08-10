@@ -117,14 +117,18 @@
   // A generated card is a local canvas, so a normal page URL cannot identify
   // it. The share link stores the rendered card in the URL fragment. Fragments
   // are not sent to a server and still work on static hosting.
-  const SHARED_CARD_PREFIX = "card=";
+  const SHARED_CARD_PREFIX = "c=";
 
   async function loadSharedCardFromUrl() {
-    if (!location.hash.startsWith(`#${SHARED_CARD_PREFIX}`)) return false;
+    const isCompactLink = location.hash.startsWith(`#${SHARED_CARD_PREFIX}`);
+    const isLegacyLink = location.hash.startsWith("#card=");
+    if (!isCompactLink && !isLegacyLink) return false;
 
     try {
-      const encoded = location.hash.slice(SHARED_CARD_PREFIX.length + 1);
-      const payload = JSON.parse(decodeURIComponent(encoded));
+      const encoded = location.hash.slice(isCompactLink ? SHARED_CARD_PREFIX.length + 1 : 6);
+      const payload = isCompactLink
+        ? JSON.parse(decodeUtf8Base64(encoded))
+        : JSON.parse(decodeURIComponent(encoded));
       if (!payload || typeof payload.image !== "string" || !payload.image.startsWith("data:image/")) {
         throw new Error("Invalid card link");
       }
@@ -635,11 +639,17 @@
 
   async function createShareUrl() {
     try {
-      // JPEG is substantially smaller than the downloadable PNG and keeps
-      // the generated link usable when it is pasted into messaging apps.
-      const shareBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.86));
+      // WebP is substantially smaller than the downloadable PNG and keeps the
+      // self-contained link more usable when it is pasted into messaging apps.
+      // The card is displayed inside a constrained stage, so a 1000px copy is
+      // enough for sharing while keeping the URL from becoming enormous.
+      const shareCanvas = document.createElement("canvas");
+      shareCanvas.width = 1000;
+      shareCanvas.height = Math.round(CANVAS_H * (shareCanvas.width / CANVAS_W));
+      shareCanvas.getContext("2d").drawImage(canvas, 0, 0, shareCanvas.width, shareCanvas.height);
+      const shareBlob = await new Promise((resolve) => shareCanvas.toBlob(resolve, "image/webp", 0.78));
       const image = await blobToDataUrl(shareBlob || state.lastBlob);
-      const payload = encodeURIComponent(JSON.stringify({
+      const payload = encodeUtf8Base64(JSON.stringify({
         image,
         cardNumber: state.cardNumber,
         rarity: state.rarity.key,
@@ -657,6 +667,20 @@
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
+  }
+
+  function encodeUtf8Base64(value) {
+    const bytes = new TextEncoder().encode(value);
+    let binary = "";
+    bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  function decodeUtf8Base64(value) {
+    const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - value.length % 4) % 4);
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
   }
 
   async function copyText(value) {
