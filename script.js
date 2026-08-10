@@ -59,6 +59,7 @@
     builderClass: "",
     cardNumber: 1,
     lastBlob: null,
+    sharedCard: false,
   };
 
   let frameImg = null;
@@ -112,6 +113,55 @@
         document.fonts.load('400 24px "Space Mono"'),
       ]).catch(() => {}).then(() => document.fonts.ready)
     : Promise.resolve();
+
+  // A generated card is a local canvas, so a normal page URL cannot identify
+  // it. The share link stores the rendered card in the URL fragment. Fragments
+  // are not sent to a server and still work on static hosting.
+  const SHARED_CARD_PREFIX = "card=";
+
+  async function loadSharedCardFromUrl() {
+    if (!location.hash.startsWith(`#${SHARED_CARD_PREFIX}`)) return false;
+
+    try {
+      const encoded = location.hash.slice(SHARED_CARD_PREFIX.length + 1);
+      const payload = JSON.parse(decodeURIComponent(encoded));
+      if (!payload || typeof payload.image !== "string" || !payload.image.startsWith("data:image/")) {
+        throw new Error("Invalid card link");
+      }
+
+      const image = await loadImage(payload.image);
+      state.lastBlob = await fetch(payload.image).then((response) => response.blob());
+      await Promise.all([frameReady, fontsReady]);
+      ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+      ctx.drawImage(image, 0, 0, CANVAS_W, CANVAS_H);
+      state.sharedCard = true;
+      state.cardNumber = Number(payload.cardNumber) || 1;
+      state.rarity = RARITIES.find((rarity) => rarity.key === payload.rarity) || RARITIES[0];
+      tagRarity.textContent = state.rarity.label;
+      tagRarity.dataset.rarity = state.rarity.key;
+      tagNumber.textContent = `No. ${String(state.cardNumber).padStart(6, "0")}`;
+      btnReroll.hidden = true;
+      btnDownload.hidden = false;
+      btnShare.textContent = "Copy card link";
+      showResultPanel();
+      showToast("Shared Builder ID loaded");
+      return true;
+    } catch (err) {
+      console.warn("Could not load shared card", err);
+      showToast("That card link is invalid or incomplete.");
+      history.replaceState(null, "", `${location.pathname}${location.search}`);
+      return false;
+    }
+  }
+
+  function loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = reject;
+      image.src = src;
+    });
+  }
 
   /* =========================================================
      UPLOAD HANDLING
@@ -515,6 +565,12 @@
     updateGenerateEnabled();
     panelResult.classList.remove("panel--active");
     panelInput.classList.add("panel--active");
+    if (state.sharedCard) {
+      state.sharedCard = false;
+      btnReroll.hidden = false;
+      btnShare.textContent = "Share card link";
+      history.replaceState(null, "", `${location.pathname}${location.search}`);
+    }
   });
 
   /* =========================================================
@@ -551,6 +607,70 @@
     if (!state.lastBlob) return;
     const caption = captionFor(state.rarity.key);
     const filename = `hh-goa-2026-builder-id-${state.cardNumber}.png`;
+    const shareUrl = await createShareUrl();
+
+    if (!shareUrl) {
+      showToast("Couldn't create a link for this card. Download it instead.");
+      return;
+    }
+
+    if (state.sharedCard) {
+      const copied = await copyText(shareUrl);
+      showToast(copied ? "Card link copied" : "Select and copy the card URL from your browser.");
+      return;
+    }
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "My HH Goa Builder ID", text: caption, url: shareUrl });
+        return;
+      } catch (err) {
+        if (err && err.name === "AbortError") return;
+      }
+    }
+
+    const copied = await copyText(shareUrl);
+    showToast(copied ? "Card link copied — paste it anywhere" : "Card link ready — copy it from your browser.");
+  });
+
+  async function createShareUrl() {
+    try {
+      // JPEG is substantially smaller than the downloadable PNG and keeps
+      // the generated link usable when it is pasted into messaging apps.
+      const shareBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.86));
+      const image = await blobToDataUrl(shareBlob || state.lastBlob);
+      const payload = encodeURIComponent(JSON.stringify({
+        image,
+        cardNumber: state.cardNumber,
+        rarity: state.rarity.key,
+      }));
+      return `${location.href.split("#")[0]}#${SHARED_CARD_PREFIX}${payload}`;
+    } catch {
+      return null;
+    }
+  }
+
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function copyText(value) {
+    try {
+      if (!navigator.clipboard) return false;
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /* Legacy image-share fallback retained for browsers without URL sharing. */
+  async function shareImageFallback(caption, filename) {
 
     const file = new File([state.lastBlob], filename, { type: "image/png" });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -571,7 +691,7 @@
     showToast(copied
       ? "Image downloaded & copied — paste it into the tweet with Ctrl+V (Cmd+V on Mac)."
       : "Image downloaded — attach it to your tweet.");
-  });
+  }
 
   async function tryCopyImageToClipboard(blob) {
     try {
@@ -593,4 +713,7 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { toastEl.hidden = true; }, 3800);
   }
+
+  // Resolve shared links after all DOM references and canvas setup exist.
+  loadSharedCardFromUrl();
 })();
