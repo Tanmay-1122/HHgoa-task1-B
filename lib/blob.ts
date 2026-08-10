@@ -4,9 +4,8 @@ export async function uploadCardImage(id: number, file: Blob | File): Promise<st
   const { url } = await put(`cards/${id}.png`, file, {
     access: "public",
     contentType: "image/png",
+    // A stable pathname allows retries to replace the existing image.
     addRandomSuffix: false,
-    // overwrite in case a retry happens after a partial failure
-    allowOverwrite: true,
   });
   return url;
 }
