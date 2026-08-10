@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>HH Goa 2026 — Builder ID Generator</title>
+<meta name="description" content="Turn your photo into an official HH Goa 2026 Builder ID card in seconds. Download it, share it, tag #FrameInGoa." />
+
+<meta property="og:title" content="HH Goa 2026 — Builder ID Generator" />
+<meta property="og:description" content="Generate your HH Goa 2026 Builder ID card in seconds." />
+<meta property="og:type" content="website" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<div class="bg-noise" aria-hidden="true"></div>
+
+<header class="site-header">
+  <p class="eyebrow">HH GOA 2026</p>
+  <h1>Builder&nbsp;ID Generator</h1>
+  <p class="subhead">Upload a photo, get your official HH Goa 2026 Builder ID in seconds. Download it, share it, tag <strong>#FrameInGoa</strong>.</p>
+</header>
+
+<main id="app">
+
+  <!-- INPUT PANEL -->
+  <section id="panel-input" class="panel panel--active">
+
+    <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload your photo">
+      <div id="dropzone-empty" class="dropzone-empty">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 16V4M12 4L7 9M12 4L17 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <p><strong>Tap to upload</strong> or drag a photo here</p>
+        <p class="dropzone-hint">JPG, PNG, or HEIC from your iPhone</p>
+      </div>
+      <canvas id="dropzone-preview" class="dropzone-preview" width="800" height="440" hidden></canvas>
+      <p id="dropzone-status" class="dropzone-status" hidden></p>
+      <input id="file-input" type="file" accept="image/*,.heic,.heif" hidden />
+    </div>
+
+    <form id="details-form" class="details-form">
+      <label class="field">
+        <span class="field-label">Name</span>
+        <input id="input-name" type="text" maxlength="24" placeholder="Aditi Verma" autocomplete="name" required />
+      </label>
+      <label class="field">
+        <span class="field-label">Stack / role</span>
+        <input id="input-role" type="text" maxlength="28" placeholder="Full-stack dev, AI, design…" required />
+      </label>
+
+      <button type="submit" id="btn-generate" class="btn btn--primary btn--full" disabled>
+        Generate My Builder ID
+      </button>
+    </form>
+
+  </section>
+
+  <!-- RESULT PANEL -->
+  <section id="panel-result" class="panel">
+    <div id="card-stage" class="card-stage">
+      <canvas id="card-canvas" width="1600" height="764"></canvas>
+    </div>
+
+    <div class="result-tags">
+      <span id="tag-rarity" class="rarity-pill">COMMON</span>
+      <span id="tag-number" class="card-number">No. 000000</span>
+    </div>
+
+    <div class="action-bar">
+      <button id="btn-reroll" class="btn btn--ghost" type="button">🎲 Reroll class</button>
+      <button id="btn-download" class="btn btn--secondary" type="button">Download</button>
+      <button id="btn-share" class="btn btn--primary" type="button">Share to X</button>
+    </div>
+
+    <button id="btn-restart" class="btn btn--link" type="button">Start over with a new photo</button>
+  </section>
+
+  <p id="toast" class="toast" hidden></p>
+
+</main>
+
+<footer class="site-footer">
+  <p>Not an official HH Goa page — a builder ID tool made for the shortlisting task. Tag <strong>#FrameInGoa</strong> when you post.</p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js" defer></script>
+<script src="script.js" defer></script>
+</body>
+</html>
