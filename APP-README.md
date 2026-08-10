@@ -7,7 +7,7 @@ searchable gallery, and can be deleted by whoever made it.
 ## Important — read this first
 
 I built this entire codebase by hand in a sandboxed environment **without
-access to the npm registry**, so I could not run `npm install` or `next
+access to the npm registry** , so I could not run `npm install` or `next
 build` myself to get a real, final compile check. I did as much verification
 as I could without that:
 
