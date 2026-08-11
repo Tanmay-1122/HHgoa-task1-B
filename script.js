@@ -105,38 +105,98 @@
 
   /* =========================================================
      DEPTH INTERACTIONS
+     Each parallax element's CSS float animation (passport-float,
+     coconut-float, etc.) also animates `transform`, which would
+     override any JS-set translate. Solution: after entrance
+     animations finish we stop those CSS keyframes and drive
+     the full transform (base rotation + parallax) from JS.
      ========================================================= */
   function setupDepthInteractions() {
-    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const heroStage = document.querySelector(".hero-stage");
+    const heroStage   = document.querySelector(".hero-stage");
+    const passport    = document.querySelector(".hero-passport");
+    const sunDisc     = document.querySelector(".sun-disc");
+    const coconut     = document.querySelector(".scene-coconut");
+    const mapEl       = document.querySelector(".scene-map");
+    const orbit1      = document.querySelector(".orbit--one");
+    const orbit2      = document.querySelector(".orbit--two");
     const cardStageEl = document.querySelector("#card-stage");
-    if (!heroStage && !cardStageEl) return;
+    if (!heroStage) return;
 
+    // Base transforms taken from CSS (baked in so we can set transform freely)
+    const BASE = {
+      passport:  "rotate(7deg)  translateZ(130px)",
+      sunDisc:   "translateZ(45px) rotate(11deg)",
+      coconut:   "rotate(-10deg) translateZ(110px)",
+      map:       "rotate(5deg)  translateZ(120px)",
+      orbit1:    "rotate(-20deg) rotateX(63deg)",
+      orbit2:    "rotate(28deg)  rotateX(67deg)",
+    };
+
+    let parallaxActive = false;
     let frame = 0;
-    let pointerX = 0, pointerY = 0;
-    let targetX = 0, targetY = 0;
+    let pX = 0, pY = 0;
+    let tX = 0, tY = 0;
+
+    function activateParallax() {
+      if (parallaxActive) return;
+      parallaxActive = true;
+      // Kill CSS keyframe float animations so JS can own the transforms
+      if (passport) { passport.style.animation = "none"; passport.style.transform = BASE.passport; }
+      if (sunDisc)  { sunDisc.style.animation  = "none"; sunDisc.style.transform  = BASE.sunDisc; }
+      if (coconut)  { coconut.style.animation  = "none"; coconut.style.transform  = BASE.coconut; }
+      if (mapEl)    { mapEl.style.animation    = "none"; mapEl.style.transform    = BASE.map; }
+      if (orbit1)   { orbit1.style.animation   = "none"; orbit1.style.transform   = BASE.orbit1; }
+      if (orbit2)   { orbit2.style.animation   = "none"; orbit2.style.transform   = BASE.orbit2; }
+      // Kill stage-breathe so our tilt can work
+      if (heroStage) heroStage.style.animation = "none";
+    }
+
     const animate = () => {
       frame = 0;
-      pointerX += (targetX - pointerX) * 0.08;
-      pointerY += (targetY - pointerY) * 0.08;
-      if (heroStage) heroStage.style.setProperty("--parallax-x", `${pointerX}px`);
-      if (heroStage) heroStage.style.setProperty("--parallax-y", `${pointerY}px`);
+      pX += (tX - pX) * 0.1;
+      pY += (tY - pY) * 0.1;
+
+      // 3-D tilt of the whole stage
+      heroStage.style.transform =
+        `perspective(900px) rotateX(${(pY * -0.45).toFixed(3)}deg) rotateY(${(pX * 0.45).toFixed(3)}deg)`;
+
+      // Each layer shifts by a different amount (closer = more shift)
+      const s = (el, base, mx, my) => {
+        if (el) el.style.transform =
+          `${base} translate(${(pX * mx).toFixed(2)}px, ${(pY * my).toFixed(2)}px)`;
+      };
+      s(passport, BASE.passport, 1.0, 1.0);
+      s(sunDisc,  BASE.sunDisc,  0.7, 0.7);
+      s(coconut,  BASE.coconut,  1.7, 1.7);
+      s(mapEl,    BASE.map,      1.5, 1.5);
+      s(orbit1,   BASE.orbit1,  -0.5, -0.5);
+      s(orbit2,   BASE.orbit2,  -0.3, -0.3);
+
       if (cardStageEl && cardStageEl.matches(":hover")) {
-        cardStageEl.style.transform = `perspective(1200px) rotateX(${pointerY * -0.035}deg) rotateY(${pointerX * 0.035}deg)`;
+        cardStageEl.style.transform =
+          `perspective(900px) rotateX(${(pY * -0.35).toFixed(3)}deg) rotateY(${(pX * 0.35).toFixed(3)}deg)`;
       }
-      if (Math.abs(targetX - pointerX) > 0.1 || Math.abs(targetY - pointerY) > 0.1) frame = requestAnimationFrame(animate);
+
+      if (Math.abs(tX - pX) > 0.01 || Math.abs(tY - pY) > 0.01) {
+        frame = requestAnimationFrame(animate);
+      }
     };
-    window.addEventListener("pointermove", (event) => {
-      const x = (event.clientX / window.innerWidth - 0.5) * 2;
-      const y = (event.clientY / window.innerHeight - 0.5) * 2;
-      targetX = x * 14;
-      targetY = y * 10;
+
+    const handlePointer = (clientX, clientY) => {
+      activateParallax();
+      tX = (clientX / window.innerWidth  - 0.5) * 2 * 28;
+      tY = (clientY / window.innerHeight - 0.5) * 2 * 20;
       if (!frame) frame = requestAnimationFrame(animate);
+    };
+
+    window.addEventListener("mousemove",   (e) => handlePointer(e.clientX, e.clientY), { passive: true });
+    document.addEventListener("mousemove", (e) => handlePointer(e.clientX, e.clientY), { passive: true });
+    window.addEventListener("pointermove", (e) => {
+      if (e.pointerType !== "touch") handlePointer(e.clientX, e.clientY);
     }, { passive: true });
+
     if (cardStageEl) {
-      cardStageEl.addEventListener("pointerleave", () => {
-        cardStageEl.style.transform = "";
-      });
+      cardStageEl.addEventListener("mouseleave", () => { cardStageEl.style.transform = ""; });
     }
   }
   setupDepthInteractions();
@@ -145,7 +205,6 @@
      CINEMATIC ENTRANCE — staggered reveal on page load
      ========================================================= */
   function setupEntranceAnimations() {
-    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const entranceEls = document.querySelectorAll("[data-entrance]");
     entranceEls.forEach((el) => {
       const type = el.dataset.entrance;
@@ -153,11 +212,14 @@
       const cls = type === "left" ? "anim-entrance-left" : type === "right" ? "anim-entrance-right" : "anim-entrance";
       el.style.animationDelay = `${delay}ms`;
       el.classList.add(cls);
+
+      el.addEventListener("animationend", () => {
+        el.classList.remove(cls);
+        el.style.opacity = "1";
+      }, { once: true });
     });
   }
   setupEntranceAnimations();
-
-
 
   /* =========================================================
      CARD SPECULAR HIGHLIGHT — follows mouse over generated card
@@ -167,6 +229,7 @@
     const stageEl = document.getElementById("card-stage");
     if (!specular || !stageEl) return;
     stageEl.addEventListener("pointermove", (e) => {
+      if (e.pointerType === "touch") return;
       const rect = stageEl.getBoundingClientRect();
       const x = ((e.clientX - rect.left) / rect.width) * 100;
       const y = ((e.clientY - rect.top) / rect.height) * 100;
@@ -176,7 +239,6 @@
     stageEl.addEventListener("pointerleave", () => {
       specular.style.setProperty("--spec-x", "50%");
       specular.style.setProperty("--spec-y", "50%");
-    });
   }
   setupSpecularHighlight();
 
@@ -195,15 +257,7 @@
     frameImg.src = FRAME_SRC;
   });
 
-  photoFrameReady = new Promise((resolve) => {
-    photoFrameImg = new Image();
-    photoFrameImg.onload = resolve;
-    photoFrameImg.onerror = () => {
-      console.warn(`Photo frame art failed to load from "${PHOTO_FRAME_SRC}".`);
-      resolve();
-    };
-    photoFrameImg.src = PHOTO_FRAME_SRC;
-  });
+  photoFrameReady = Promise.resolve();
 
   stampReady = new Promise((resolve) => {
     stampImg = new Image();
@@ -599,27 +653,40 @@
   }
 
   function pickStampPositions() {
-    // Keep every candidate away from the portrait slot so the ink never lands
-    // on a face. Three unique positions are sampled for each generated card.
-    const candidates = [
-      { x: 0.56, y: 0.16, size: 122 },
-      { x: 0.76, y: 0.18, size: 138 },
-      { x: 0.48, y: 0.79, size: 132 },
-      { x: 0.72, y: 0.76, size: 124 },
-      { x: 0.88, y: 0.48, size: 116 },
-      { x: 0.41, y: 0.20, size: 112 },
+    // Official Officer Stamp — placed directly overlapping the photo boundary
+    // so the ink seal extends across the portrait onto the passport page.
+    const photoOverlaps = [
+      { x: 0.33, y: 0.70, size: 215 }, // Bottom-right corner of photo
+      { x: 0.35, y: 0.40, size: 200 }, // Mid-right edge of photo
+      { x: 0.27, y: 0.74, size: 210 }, // Bottom edge of photo
+      { x: 0.34, y: 0.55, size: 205 }, // Lower-right edge of photo
     ];
+
+    const pageStamps = [
+      { x: 0.76, y: 0.18, size: 140 },
+      { x: 0.70, y: 0.76, size: 135 },
+      { x: 0.86, y: 0.46, size: 125 },
+    ];
+
     const seed = hashStr(`${state.name}|${state.role}|${state.cardNumber}|${state.rerollSeed}|stamp`);
-    const shuffled = candidates
-      .map((candidate, index) => ({ candidate, score: hashStr(`${seed}|${index}`) }))
-      .sort((a, b) => a.score - b.score)
-      .slice(0, 3)
-      .map(({ candidate }, index) => ({
-        ...candidate,
-        rotation: ((seed + index * 37) % 17) - 8,
-        opacity: 0.42 + ((seed + index * 11) % 16) / 100,
-      }));
-    return shuffled;
+
+    // Primary official officer stamp over photo boundary
+    const primaryIndex = seed % photoOverlaps.length;
+    const primary = {
+      ...photoOverlaps[primaryIndex],
+      rotation: ((seed % 27) - 13), // realistic officer tilt (-13° to +13°)
+      opacity: 0.75 + ((seed % 14) / 100), // rich, authentic ink density (0.75 - 0.89)
+    };
+
+    // Secondary background stamp on page
+    const secondaryIndex = (seed >> 2) % pageStamps.length;
+    const secondary = {
+      ...pageStamps[secondaryIndex],
+      rotation: (((seed * 7) % 31) - 15),
+      opacity: 0.45 + ((seed % 20) / 100),
+    };
+
+    return [primary, secondary];
   }
 
   function fitText(ctx, text, font, maxWidth, minSize) {
@@ -673,14 +740,7 @@
       ctx.stroke();
     }
 
-    // 3. Goa travel frame around the portrait. It is part of the rendered
-    // canvas, so downloads and shared card links include it too.
-    if (photoFrameImg && photoFrameImg.complete && photoFrameImg.naturalWidth) {
-      ctx.save();
-      ctx.globalCompositeOperation = "source-over";
-      ctx.drawImage(photoFrameImg, -18, -36, 820, 820);
-      ctx.restore();
-    }
+
 
     // 4. text block
     const tx0 = TEXT_X0 * CANVAS_W;
