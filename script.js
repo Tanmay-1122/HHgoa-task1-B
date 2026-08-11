@@ -5,11 +5,13 @@
      CONFIG — layout fractions verified against assets/hh-frame.webp
      ========================================================= */
   const FRAME_SRC = "assets/hh-frame.webp";
+  const PHOTO_FRAME_SRC = "assets/hh-photo-frame.png";
+  const STAMP_SRC = "assets/hh-stamp.png";
   const CANVAS_W = 1600;
   const CANVAS_H = 764; // matches frame aspect ratio (1546:738)
 
   // Photo slot — left portion of the cream field, clear of the palm tree & diya
-  const PHOTO_RECT = { x0: 0.115, y0: 0.17, x1: 0.37, y1: 0.80 };
+  const PHOTO_RECT = { x0: 0.14, y0: 0.20, x1: 0.36, y1: 0.80 };
   // Text block — right portion of the cream field, clear of the jhumar chain & scooter
   const TEXT_X0 = 0.40, TEXT_X1 = 0.86;
   const TEXT_Y0 = 0.32, TEXT_Y1 = 0.76;
@@ -52,7 +54,9 @@
   const state = {
     photoEl: null,      // downscaled HTMLImageElement, ready to draw
     faceCenter: null,   // {x,y} fraction of photo, or null
+    photoPosition: null, // editable crop focus point, {x,y} fractions of source image
     name: "",
+    stack: "",
     role: "",
     rerollSeed: 0,
     rarity: RARITIES[0],
@@ -60,10 +64,15 @@
     cardNumber: 1,
     lastBlob: null,
     sharedCard: false,
+    stampPositions: [],
   };
 
   let frameImg = null;
   let frameReady = null;
+  let photoFrameImg = null;
+  let photoFrameReady = null;
+  let stampImg = null;
+  let stampReady = null;
 
   /* =========================================================
      DOM
@@ -76,7 +85,10 @@
   const fileInput = $("file-input");
   const form = $("details-form");
   const inputName = $("input-name");
+  const inputStack = $("input-stack");
+  const inputStackCustom = $("input-stack-custom");
   const inputRole = $("input-role");
+  const inputRoleCustom = $("input-role-custom");
   const btnGenerate = $("btn-generate");
   const panelInput = $("panel-input");
   const panelResult = $("panel-result");
@@ -90,6 +102,83 @@
   const btnShare = $("btn-share");
   const btnRestart = $("btn-restart");
   const toastEl = $("toast");
+
+  /* =========================================================
+     DEPTH INTERACTIONS
+     ========================================================= */
+  function setupDepthInteractions() {
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const heroStage = document.querySelector(".hero-stage");
+    const cardStageEl = document.querySelector("#card-stage");
+    if (!heroStage && !cardStageEl) return;
+
+    let frame = 0;
+    let pointerX = 0, pointerY = 0;
+    let targetX = 0, targetY = 0;
+    const animate = () => {
+      frame = 0;
+      pointerX += (targetX - pointerX) * 0.08;
+      pointerY += (targetY - pointerY) * 0.08;
+      if (heroStage) heroStage.style.setProperty("--parallax-x", `${pointerX}px`);
+      if (heroStage) heroStage.style.setProperty("--parallax-y", `${pointerY}px`);
+      if (cardStageEl && cardStageEl.matches(":hover")) {
+        cardStageEl.style.transform = `perspective(1200px) rotateX(${pointerY * -0.035}deg) rotateY(${pointerX * 0.035}deg)`;
+      }
+      if (Math.abs(targetX - pointerX) > 0.1 || Math.abs(targetY - pointerY) > 0.1) frame = requestAnimationFrame(animate);
+    };
+    window.addEventListener("pointermove", (event) => {
+      const x = (event.clientX / window.innerWidth - 0.5) * 2;
+      const y = (event.clientY / window.innerHeight - 0.5) * 2;
+      targetX = x * 14;
+      targetY = y * 10;
+      if (!frame) frame = requestAnimationFrame(animate);
+    }, { passive: true });
+    if (cardStageEl) {
+      cardStageEl.addEventListener("pointerleave", () => {
+        cardStageEl.style.transform = "";
+      });
+    }
+  }
+  setupDepthInteractions();
+
+  /* =========================================================
+     CINEMATIC ENTRANCE — staggered reveal on page load
+     ========================================================= */
+  function setupEntranceAnimations() {
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const entranceEls = document.querySelectorAll("[data-entrance]");
+    entranceEls.forEach((el) => {
+      const type = el.dataset.entrance;
+      const delay = parseInt(el.dataset.delay || "0", 10);
+      const cls = type === "left" ? "anim-entrance-left" : type === "right" ? "anim-entrance-right" : "anim-entrance";
+      el.style.animationDelay = `${delay}ms`;
+      el.classList.add(cls);
+    });
+  }
+  setupEntranceAnimations();
+
+
+
+  /* =========================================================
+     CARD SPECULAR HIGHLIGHT — follows mouse over generated card
+     ========================================================= */
+  function setupSpecularHighlight() {
+    const specular = document.getElementById("card-specular");
+    const stageEl = document.getElementById("card-stage");
+    if (!specular || !stageEl) return;
+    stageEl.addEventListener("pointermove", (e) => {
+      const rect = stageEl.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const y = ((e.clientY - rect.top) / rect.height) * 100;
+      specular.style.setProperty("--spec-x", `${x}%`);
+      specular.style.setProperty("--spec-y", `${y}%`);
+    });
+    stageEl.addEventListener("pointerleave", () => {
+      specular.style.setProperty("--spec-x", "50%");
+      specular.style.setProperty("--spec-y", "50%");
+    });
+  }
+  setupSpecularHighlight();
 
   /* =========================================================
      INIT — preload frame + fonts so generation has zero fetch delay
@@ -106,12 +195,37 @@
     frameImg.src = FRAME_SRC;
   });
 
-  const fontsReady = (document.fonts && document.fonts.ready)
-    ? Promise.all([
-        document.fonts.load('700 64px "Fraunces"'),
-        document.fonts.load('700 24px "Space Mono"'),
-        document.fonts.load('400 24px "Space Mono"'),
-      ]).catch(() => {}).then(() => document.fonts.ready)
+  photoFrameReady = new Promise((resolve) => {
+    photoFrameImg = new Image();
+    photoFrameImg.onload = resolve;
+    photoFrameImg.onerror = () => {
+      console.warn(`Photo frame art failed to load from "${PHOTO_FRAME_SRC}".`);
+      resolve();
+    };
+    photoFrameImg.src = PHOTO_FRAME_SRC;
+  });
+
+  stampReady = new Promise((resolve) => {
+    stampImg = new Image();
+    stampImg.onload = resolve;
+    stampImg.onerror = () => {
+      console.warn(`Stamp art failed to load from "${STAMP_SRC}".`);
+      resolve();
+    };
+    stampImg.src = STAMP_SRC;
+  });
+
+  // Font loading must never block generation. Some local-file/privacy-
+  // hardened browsers leave document.fonts.ready pending indefinitely.
+  const fontsReady = (document.fonts && document.fonts.load)
+    ? Promise.race([
+        Promise.all([
+          document.fonts.load('700 64px "Fraunces"'),
+          document.fonts.load('700 24px "Space Mono"'),
+          document.fonts.load('400 24px "Space Mono"'),
+        ]).catch(() => {}),
+        new Promise((resolve) => setTimeout(resolve, 2500)),
+      ])
     : Promise.resolve();
 
   // A generated card is a local canvas, so a normal page URL cannot identify
@@ -170,7 +284,10 @@
   /* =========================================================
      UPLOAD HANDLING
      ========================================================= */
-  dropzone.addEventListener("click", () => fileInput.click());
+  dropzone.addEventListener("click", (event) => {
+    if (event.target === dropzonePreview) return;
+    fileInput.click();
+  });
   dropzone.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
   });
@@ -196,16 +313,14 @@
   }
 
   async function handleFile(file) {
-    dropzoneEmpty.hidden = true;
     dropzonePreview.hidden = true;
-    setStatus("Reading photo…");
+    setStatus(null);
 
     try {
       let workingFile = file;
 
       const isHeic = /heic|heif/i.test(file.type) || /\.(heic|heif)$/i.test(file.name);
       if (isHeic) {
-        setStatus("Converting HEIC…");
         if (typeof heic2any !== "function") {
           throw new Error("HEIC support is still loading — try again in a second.");
         }
@@ -213,15 +328,17 @@
         workingFile = Array.isArray(converted) ? converted[0] : converted;
       }
 
-      setStatus("Preparing…");
       const bitmap = await loadDownscaledBitmap(workingFile, 1600);
 
       if (state.photoEl && state.photoEl.close) state.photoEl.close();
       state.photoEl = bitmap;
       state.faceCenter = await detectFaceCenter(bitmap);
+      state.photoPosition = state.faceCenter || { x: 0.5, y: 0.42 };
 
       drawPreview(bitmap);
+      dropzoneEmpty.hidden = true;
       dropzonePreview.hidden = false;
+      dropzone.classList.add("has-photo");
       setStatus(null);
       updateGenerateEnabled();
     } catch (err) {
@@ -240,18 +357,32 @@
   // of this pipeline. createImageBitmap never exposes pixel data back to JS,
   // so it isn't subject to that guard.
   async function loadDownscaledBitmap(fileOrBlob, maxDim) {
-    if (!("createImageBitmap" in window)) {
-      return legacyDownscaleViaCanvas(fileOrBlob, maxDim);
-    }
-    const raw = await createImageBitmap(fileOrBlob);
-    const scale = Math.min(1, maxDim / Math.max(raw.width, raw.height));
-    if (scale >= 1) return raw;
+    if ("createImageBitmap" in window) {
+      try {
+        const raw = await withTimeout(createImageBitmap(fileOrBlob), 8000);
+        const scale = Math.min(1, maxDim / Math.max(raw.width, raw.height));
+        if (scale >= 1) return raw;
 
-    const w = Math.max(1, Math.round(raw.width * scale));
-    const h = Math.max(1, Math.round(raw.height * scale));
-    const resized = await createImageBitmap(raw, { resizeWidth: w, resizeHeight: h, resizeQuality: "high" });
-    raw.close();
-    return resized;
+        const w = Math.max(1, Math.round(raw.width * scale));
+        const h = Math.max(1, Math.round(raw.height * scale));
+        const resized = await withTimeout(
+          createImageBitmap(raw, { resizeWidth: w, resizeHeight: h, resizeQuality: "high" }),
+          8000,
+        );
+        raw.close();
+        return resized;
+      } catch (err) {
+        console.warn("Fast image decoding failed; using browser fallback.", err);
+      }
+    }
+    return legacyDownscaleViaCanvas(fileOrBlob, maxDim);
+  }
+
+  function withTimeout(promise, timeoutMs) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Image decode timed out")), timeoutMs)),
+    ]);
   }
 
   // Fallback only for browsers with no createImageBitmap support at all
@@ -259,23 +390,23 @@
   // than hard-fails.
   function legacyDownscaleViaCanvas(file, maxDim) {
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const img = new Image();
-        img.onload = () => {
-          const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
-          const w = Math.round(img.naturalWidth * scale);
-          const h = Math.round(img.naturalHeight * scale);
-          const off = document.createElement("canvas");
-          off.width = w; off.height = h;
-          off.getContext("2d").drawImage(img, 0, 0, w, h);
-          resolve(off);
-        };
-        img.onerror = reject;
-        img.src = reader.result;
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.max(1, Math.round(img.naturalWidth * scale));
+        const h = Math.max(1, Math.round(img.naturalHeight * scale));
+        const off = document.createElement("canvas");
+        off.width = w; off.height = h;
+        off.getContext("2d").drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        resolve(off);
       };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
+      img.onerror = (err) => {
+        URL.revokeObjectURL(url);
+        reject(err);
+      };
+      img.src = url;
     });
   }
 
@@ -284,10 +415,41 @@
   function drawPreview(bitmap) {
     const pctx = dropzonePreview.getContext("2d");
     const cw = dropzonePreview.width, ch = dropzonePreview.height;
-    const crop = coverCropRect(bitmap.width, bitmap.height, cw, ch, 0.5, 0.42);
+    const focus = state.photoPosition || { x: 0.5, y: 0.42 };
+    const crop = coverCropRect(bitmap.width, bitmap.height, cw, ch, focus.x, focus.y);
     pctx.clearRect(0, 0, cw, ch);
     pctx.drawImage(bitmap, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, cw, ch);
   }
+
+  let photoDrag = null;
+  dropzonePreview.addEventListener("pointerdown", (event) => {
+    if (!state.photoEl) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dropzonePreview.setPointerCapture(event.pointerId);
+    photoDrag = { id: event.pointerId, x: event.clientX, y: event.clientY };
+    dropzone.classList.add("is-photo-dragging");
+  });
+  dropzonePreview.addEventListener("pointermove", (event) => {
+    if (!photoDrag || photoDrag.id !== event.pointerId || !state.photoEl) return;
+    const rect = dropzonePreview.getBoundingClientRect();
+    const dx = event.clientX - photoDrag.x;
+    const dy = event.clientY - photoDrag.y;
+    const focus = state.photoPosition || { x: 0.5, y: 0.42 };
+    focus.x = Math.max(0.05, Math.min(0.95, focus.x - (dx / rect.width) * 0.62));
+    focus.y = Math.max(0.05, Math.min(0.95, focus.y - (dy / rect.height) * 0.62));
+    state.photoPosition = focus;
+    photoDrag.x = event.clientX;
+    photoDrag.y = event.clientY;
+    drawPreview(state.photoEl);
+  });
+  function stopPhotoDrag(event) {
+    if (!photoDrag || (event && photoDrag.id !== event.pointerId)) return;
+    photoDrag = null;
+    dropzone.classList.remove("is-photo-dragging");
+  }
+  dropzonePreview.addEventListener("pointerup", stopPhotoDrag);
+  dropzonePreview.addEventListener("pointercancel", stopPhotoDrag);
 
   // Auto-fit only — no manual crop step. Bias the crop toward a detected
   // face when the browser supports it; otherwise a plain center-crop.
@@ -311,22 +473,61 @@
      FORM
      ========================================================= */
   function updateGenerateEnabled() {
-    const ok = !!state.photoEl && inputName.value.trim().length > 0 && inputRole.value.trim().length > 0;
+    const ok = !!state.photoEl && inputName.value.trim().length > 0 && getProfileValue(inputStack, inputStackCustom) && getProfileValue(inputRole, inputRoleCustom);
     btnGenerate.disabled = !ok;
   }
+  function getProfileValue(select, customInput) {
+    if (select.value === "__custom__") return customInput.value.trim();
+    return select.value.trim();
+  }
+  function syncCustomField(select, customInput) {
+    const isCustom = select.value === "__custom__";
+    select.hidden = isCustom;
+    customInput.hidden = !isCustom;
+    customInput.required = isCustom;
+    if (isCustom) customInput.focus();
+    updateGenerateEnabled();
+  }
   inputName.addEventListener("input", updateGenerateEnabled);
+  inputStack.addEventListener("change", () => syncCustomField(inputStack, inputStackCustom));
+  inputStackCustom.addEventListener("input", updateGenerateEnabled);
   inputRole.addEventListener("input", updateGenerateEnabled);
+  inputRole.addEventListener("change", () => syncCustomField(inputRole, inputRoleCustom));
+  inputRoleCustom.addEventListener("input", updateGenerateEnabled);
+  form.addEventListener("reset", () => {
+    setTimeout(() => {
+      inputStack.hidden = false;
+      inputRole.hidden = false;
+      inputStackCustom.hidden = true;
+      inputRoleCustom.hidden = true;
+      inputStackCustom.required = false;
+      inputRoleCustom.required = false;
+    });
+  });
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (btnGenerate.disabled) return;
-    state.name = inputName.value.trim();
-    state.role = inputRole.value.trim();
-    state.rerollSeed = 0;
-    state.cardNumber = nextCardNumber();
-    rollClassAndRarity();
-    await renderCard();
-    showResultPanel();
+    btnGenerate.disabled = true;
+    const originalLabel = btnGenerate.textContent;
+    btnGenerate.textContent = "Generating…";
+    try {
+      state.name = inputName.value.trim();
+      state.stack = getProfileValue(inputStack, inputStackCustom);
+      state.role = getProfileValue(inputRole, inputRoleCustom);
+      state.rerollSeed = 0;
+      state.cardNumber = nextCardNumber();
+      state.stampPositions = pickStampPositions();
+      rollClassAndRarity();
+      await renderCard();
+      showResultPanel();
+    } catch (err) {
+      console.error("Builder ID generation failed", err);
+      showToast("The card could not be generated. Please try the photo again.");
+    } finally {
+      btnGenerate.textContent = originalLabel;
+      updateGenerateEnabled();
+    }
   });
 
   /* =========================================================
@@ -341,13 +542,13 @@
   }
 
   function rollClassAndRarity() {
-    const seedBase = `${state.name}|${state.role}|${state.rerollSeed}`;
+    const seedBase = `${state.name}|${state.stack}|${state.role}|${state.rerollSeed}`;
     const h1 = hashStr(seedBase);
     const h2 = hashStr(seedBase + "|noun");
 
     const adjective = ADJECTIVES[h1 % ADJECTIVES.length];
-    const roleLower = state.role.toLowerCase();
-    const pool = ROLE_POOLS.find((p) => p.keys.some((k) => roleLower.includes(k)));
+    const profileLower = `${state.stack} ${state.role}`.toLowerCase();
+    const pool = ROLE_POOLS.find((p) => p.keys.some((k) => profileLower.includes(k)));
     const nouns = pool ? pool.nouns : DEFAULT_NOUNS;
     const noun = nouns[h2 % nouns.length];
     state.builderClass = `The ${adjective} ${noun}`;
@@ -372,6 +573,7 @@
 
   btnReroll.addEventListener("click", async () => {
     state.rerollSeed += 1;
+    state.stampPositions = pickStampPositions();
     rollClassAndRarity();
     await renderCard();
   });
@@ -396,6 +598,30 @@
     return { sx: cx, sy: cy, sw: cw, sh: ch };
   }
 
+  function pickStampPositions() {
+    // Keep every candidate away from the portrait slot so the ink never lands
+    // on a face. Three unique positions are sampled for each generated card.
+    const candidates = [
+      { x: 0.56, y: 0.16, size: 122 },
+      { x: 0.76, y: 0.18, size: 138 },
+      { x: 0.48, y: 0.79, size: 132 },
+      { x: 0.72, y: 0.76, size: 124 },
+      { x: 0.88, y: 0.48, size: 116 },
+      { x: 0.41, y: 0.20, size: 112 },
+    ];
+    const seed = hashStr(`${state.name}|${state.role}|${state.cardNumber}|${state.rerollSeed}|stamp`);
+    const shuffled = candidates
+      .map((candidate, index) => ({ candidate, score: hashStr(`${seed}|${index}`) }))
+      .sort((a, b) => a.score - b.score)
+      .slice(0, 3)
+      .map(({ candidate }, index) => ({
+        ...candidate,
+        rotation: ((seed + index * 37) % 17) - 8,
+        opacity: 0.42 + ((seed + index * 11) % 16) / 100,
+      }));
+    return shuffled;
+  }
+
   function fitText(ctx, text, font, maxWidth, minSize) {
     // font is a template like '700 64px "Fraunces"' — shrink the size until it fits
     const m = font.match(/(\d+)px/);
@@ -411,7 +637,7 @@
   }
 
   async function renderCard() {
-    await Promise.all([frameReady, fontsReady]);
+    await Promise.all([frameReady, photoFrameReady, stampReady, fontsReady]);
 
     ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
     ctx.fillStyle = COLORS.cream;
@@ -432,7 +658,7 @@
       const px1 = PHOTO_RECT.x1 * CANVAS_W, py1 = PHOTO_RECT.y1 * CANVAS_H;
       const pw = px1 - px0, ph = py1 - py0;
 
-      const bias = state.faceCenter || { x: 0.5, y: 0.42 };
+      const bias = state.photoPosition || state.faceCenter || { x: 0.5, y: 0.42 };
       const crop = coverCropRect(state.photoEl.width, state.photoEl.height, pw, ph, bias.x, bias.y);
 
       ctx.save();
@@ -447,7 +673,16 @@
       ctx.stroke();
     }
 
-    // 3. text block
+    // 3. Goa travel frame around the portrait. It is part of the rendered
+    // canvas, so downloads and shared card links include it too.
+    if (photoFrameImg && photoFrameImg.complete && photoFrameImg.naturalWidth) {
+      ctx.save();
+      ctx.globalCompositeOperation = "source-over";
+      ctx.drawImage(photoFrameImg, -18, -36, 820, 820);
+      ctx.restore();
+    }
+
+    // 4. text block
     const tx0 = TEXT_X0 * CANVAS_W;
     const tx1 = TEXT_X1 * CANVAS_W;
     const maxTextWidth = tx1 - tx0;
@@ -510,6 +745,8 @@
     const cnW = ctx.measureText(cardNumStr).width;
     ctx.fillText(cardNumStr, tx1 - cnW, footY + 11);
 
+    drawPassportStamps();
+
     // update on-page tags to match
     tagRarity.textContent = state.rarity.label;
     tagRarity.dataset.rarity = state.rarity.key;
@@ -517,6 +754,24 @@
 
     // cache a blob for instant download/share
     state.lastBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png", 0.95));
+  }
+
+  function drawPassportStamps() {
+    if (!stampImg || !stampImg.complete || !stampImg.naturalWidth) return;
+    const positions = state.stampPositions.length ? state.stampPositions : pickStampPositions();
+    ctx.save();
+    ctx.globalCompositeOperation = "multiply";
+    positions.forEach(({ x, y, size, rotation, opacity }) => {
+      const stampW = size;
+      const stampH = stampW * (stampImg.naturalHeight / stampImg.naturalWidth);
+      ctx.save();
+      ctx.globalAlpha = opacity;
+      ctx.translate(x * CANVAS_W, y * CANVAS_H);
+      ctx.rotate((rotation * Math.PI) / 180);
+      ctx.drawImage(stampImg, -stampW / 2, -stampH / 2, stampW, stampH);
+      ctx.restore();
+    });
+    ctx.restore();
   }
 
   let frameWarningShown = false;
@@ -556,15 +811,47 @@
     panelResult.classList.add("panel--active");
     cardStage.classList.remove("is-visible");
     requestAnimationFrame(() => requestAnimationFrame(() => cardStage.classList.add("is-visible")));
+
+    // Rarity lottery spin animation
+    if (!state.sharedCard) {
+      runRaritySpin(state.rarity);
+    }
+  }
+
+  function runRaritySpin(finalRarity) {
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const labels = ["COMMON", "RARE", "EPIC", "LEGENDARY"];
+    const rarityKeys = ["common", "rare", "epic", "legendary"];
+    let spins = 0;
+    const totalSpins = 12;
+    tagRarity.classList.add("is-spinning");
+    tagRarity.classList.remove("is-settled");
+
+    const interval = setInterval(() => {
+      spins++;
+      const idx = spins % labels.length;
+      tagRarity.textContent = labels[idx];
+      tagRarity.dataset.rarity = rarityKeys[idx];
+      if (spins >= totalSpins) {
+        clearInterval(interval);
+        tagRarity.textContent = finalRarity.label;
+        tagRarity.dataset.rarity = finalRarity.key;
+        tagRarity.classList.remove("is-spinning");
+        tagRarity.classList.add("is-settled");
+        setTimeout(() => tagRarity.classList.remove("is-settled"), 400);
+      }
+    }, 70);
   }
 
   btnRestart.addEventListener("click", () => {
     if (state.photoEl && state.photoEl.close) state.photoEl.close();
     state.photoEl = null;
     state.faceCenter = null;
+    state.photoPosition = null;
     form.reset();
     dropzoneEmpty.hidden = false;
     dropzonePreview.hidden = true;
+    dropzone.classList.remove("has-photo", "is-photo-dragging");
     dropzonePreview.getContext("2d").clearRect(0, 0, dropzonePreview.width, dropzonePreview.height);
     updateGenerateEnabled();
     panelResult.classList.remove("panel--active");

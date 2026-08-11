@@ -12,7 +12,7 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,900&family=Manrope:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 
 <link rel="stylesheet" href="styles.css" />
 </head>
@@ -20,51 +20,120 @@
 
 <div class="bg-noise" aria-hidden="true"></div>
 
+<nav class="site-nav" data-entrance="up" data-delay="0" aria-label="Main navigation">
+  <a class="brand-lockup" href="./" aria-label="HH Goa 2026 Builder ID home">
+    <span class="brand-mark">HH</span>
+    <span class="brand-type"><img src="assets/Hacker%20house.png" alt="Hacker House" /><small>GOA 2026 / BUILDER ID</small></span>
+  </a>
+  <div class="nav-actions">
+    <span class="nav-signal"><i></i> OPEN FOR BUILDERS</span>
+    <a href="#app" class="nav-link">CREATE <span>↗</span></a>
+  </div>
+</nav>
+
 <header class="site-header">
-  <p class="eyebrow">HH GOA 2026</p>
-  <h1>Builder&nbsp;ID Generator</h1>
-  <p class="subhead">Upload a photo, get your official HH Goa 2026 Builder ID in seconds. Download it, share it, tag <strong>#FrameInGoa</strong>.</p>
+  <div class="hero-copy" data-entrance="left" data-delay="100">
+    <p class="eyebrow">THE BUILDER ID STUDIO <span>GOA / 2026</span></p>
+    <h1>Make your <em>builder</em><br />identity visible.</h1>
+    <p class="subhead">A collectible passport for the people shipping strange, useful, beautiful things at HH Goa.</p>
+    <div class="hero-proof"><span>PHOTO → CLASS → CARD</span><span class="hero-line"></span><span>READY IN SECONDS</span></div>
+  </div>
+  <div class="hero-stage" data-entrance="right" data-delay="300" aria-hidden="true">
+    <div class="stage-glow"></div>
+    <div class="orbit orbit--one"></div>
+    <div class="orbit orbit--two"></div>
+    <div class="sun-disc"><span>GOA<br /><b>26</b></span></div>
+    <img class="scene-coconut" src="assets/hh-coconut.png" alt="HH Goa coconut drink" />
+    <img class="scene-map" src="assets/map.png" alt="Goa map artwork" />
+    <div class="scene-sticker sticker--gold">NO<br />BORING<br />CARDS</div>
+    <img class="hero-passport" src="assets/hh-passport.png" alt="Hacker House Goa passport" />
+    <div class="stage-tape tape--top"></div>
+    <div class="stage-tape tape--side"></div>
+  </div>
 </header>
 
-<main id="app">
+<main id="app" data-entrance="up" data-delay="500">
 
   <!-- INPUT PANEL -->
   <section id="panel-input" class="panel panel--active">
 
-    <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload your photo">
-      <div id="dropzone-empty" class="dropzone-empty">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M12 16V4M12 4L7 9M12 4L17 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <p><strong>Tap to upload</strong> or drag a photo here</p>
-        <p class="dropzone-hint">JPG, PNG, or HEIC from your iPhone</p>
+    <div class="panel-left">
+      <div class="panel-intro">
+        <span class="panel-kicker">BUILD YOUR ID</span>
+        <h2>Put a face<br /><i>to the work.</i></h2>
+        <p>One photo. One role. One card that says what you’re building next.</p>
       </div>
-      <canvas id="dropzone-preview" class="dropzone-preview" width="800" height="440" hidden></canvas>
-      <p id="dropzone-status" class="dropzone-status" hidden></p>
-      <input id="file-input" type="file" accept="image/*,.heic,.heif" hidden />
+
+      <form id="details-form" class="details-form">
+        <label class="field">
+          <span class="field-label">Name</span>
+          <input id="input-name" type="text" maxlength="24" placeholder="Aditi Verma" autocomplete="name" required />
+        </label>
+        <label class="field">
+          <span class="field-label">Stack</span>
+          <select id="input-stack" required>
+            <option value="" selected disabled>Choose your stack</option>
+            <option value="AI / ML">AI / ML</option>
+            <option value="Frontend">Frontend</option>
+            <option value="Backend / Infra">Backend / Infra</option>
+            <option value="Mobile">Mobile</option>
+            <option value="Design">Design</option>
+            <option value="Product">Product</option>
+            <option value="Web3 / Crypto">Web3 / Crypto</option>
+            <option value="Data">Data</option>
+            <option value="Security">Security</option>
+            <option value="DevRel / Community">DevRel / Community</option>
+            <option value="__custom__">Write your own…</option>
+          </select>
+          <input id="input-stack-custom" class="custom-profile-input" type="text" maxlength="28" placeholder="Write your stack…" hidden />
+        </label>
+        <label class="field">
+          <span class="field-label">Role</span>
+          <select id="input-role" required>
+            <option value="" selected disabled>Choose your role</option>
+            <option value="Builder">Builder</option>
+            <option value="Founder">Founder</option>
+            <option value="Engineer">Engineer</option>
+            <option value="Designer">Designer</option>
+            <option value="Product person">Product person</option>
+            <option value="Researcher">Researcher</option>
+            <option value="Creator">Creator</option>
+            <option value="Community lead">Community lead</option>
+            <option value="Student">Student</option>
+            <option value="__custom__">Write your own…</option>
+          </select>
+          <input id="input-role-custom" class="custom-profile-input" type="text" maxlength="28" placeholder="Write your role…" hidden />
+        </label>
+
+        <button type="submit" id="btn-generate" class="btn btn--primary btn--full" disabled>
+          Generate My Builder ID
+        </button>
+      </form>
     </div>
 
-    <form id="details-form" class="details-form">
-      <label class="field">
-        <span class="field-label">Name</span>
-        <input id="input-name" type="text" maxlength="24" placeholder="Aditi Verma" autocomplete="name" required />
-      </label>
-      <label class="field">
-        <span class="field-label">Stack / role</span>
-        <input id="input-role" type="text" maxlength="28" placeholder="Full-stack dev, AI, design…" required />
-      </label>
-
-      <button type="submit" id="btn-generate" class="btn btn--primary btn--full" disabled>
-        Generate My Builder ID
-      </button>
-    </form>
+    <div class="panel-right">
+      <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload your photo">
+        <div id="dropzone-empty" class="dropzone-empty">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 16V4M12 4L7 9M12 4L17 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <p><strong>Drop your portrait</strong><br />or tap to browse</p>
+          <p class="dropzone-hint">JPG, PNG, or HEIC from your iPhone</p>
+        </div>
+        <canvas id="dropzone-preview" class="dropzone-preview" width="800" height="440" hidden></canvas>
+        <p class="dropzone-adjust-hint">Drag image to adjust framing</p>
+        <p id="dropzone-status" class="dropzone-status" hidden></p>
+        <input id="file-input" type="file" accept="image/*,.heic,.heif" hidden />
+      </div>
+    </div>
 
   </section>
 
   <!-- RESULT PANEL -->
   <section id="panel-result" class="panel">
     <div id="card-stage" class="card-stage">
+      <div class="card-specular" id="card-specular"></div>
       <canvas id="card-canvas" width="1600" height="764"></canvas>
     </div>
 
@@ -74,7 +143,7 @@
     </div>
 
     <div class="action-bar">
-      <button id="btn-reroll" class="btn btn--ghost" type="button">🎲 Reroll class</button>
+      <button id="btn-reroll" class="btn btn--ghost" type="button">Reroll class</button>
       <button id="btn-download" class="btn btn--secondary" type="button">Download</button>
       <button id="btn-share" class="btn btn--primary" type="button">Share card link</button>
     </div>
