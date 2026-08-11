@@ -323,7 +323,7 @@
       tagNumber.textContent = `No. ${String(state.cardNumber).padStart(6, "0")}`;
       btnReroll.hidden = true;
       btnDownload.hidden = false;
-      btnShare.textContent = "Copy card link";
+      btnShare.textContent = "𝕏 Share to X";
       showResultPanel();
       showToast("Shared Builder ID loaded");
       return true;
@@ -695,7 +695,7 @@
       opacity: 0.45 + ((seed % 20) / 100),
     };
 
-    return [primary, secondary];
+    return [primary];
   }
 
   function fitText(ctx, text, font, maxWidth, minSize) {
@@ -928,7 +928,7 @@
     if (state.sharedCard) {
       state.sharedCard = false;
       btnReroll.hidden = false;
-      btnShare.textContent = "Share card link";
+      btnShare.textContent = "𝕏 Share to X";
       history.replaceState(null, "", `${location.pathname}${location.search}`);
     }
   });
@@ -936,13 +936,15 @@
   /* =========================================================
      DOWNLOAD + SHARE
      ========================================================= */
-  function captionFor(rarityKey) {
-    const base = "Just generated my Builder ID for HH Goa 2026 🌴";
+  function captionFor(rarityKey, name, builderClass) {
+    const nameTag = name ? `${name} ` : "";
+    const classTag = builderClass ? `"${builderClass}" ` : "";
+    const tags = "#HackerHouseGoa #FrameInGoa";
     const byRarity = {
-      common: `${base} #FrameInGoa`,
-      rare: `${base} — pulled a RARE card 💫 #FrameInGoa`,
-      epic: `${base} — EPIC pull 🔥 #FrameInGoa`,
-      legendary: `${base} — LEGENDARY pull ⚡️🏆 #FrameInGoa`,
+      common:    `${nameTag}just got their Builder ID for HH Goa 2026 🌴 ${classTag}${tags}`,
+      rare:      `${nameTag}pulled a RARE Builder ID at HH Goa 2026 💫 ${classTag}${tags}`,
+      epic:      `${nameTag}got an EPIC Builder ID at HH Goa 2026 🔥 ${classTag}${tags}`,
+      legendary: `${nameTag}just pulled LEGENDARY at HH Goa 2026 ⚡️🏆 ${classTag}${tags}`,
     };
     return byRarity[rarityKey] || byRarity.common;
   }
@@ -965,32 +967,19 @@
 
   btnShare.addEventListener("click", async () => {
     if (!state.lastBlob) return;
-    const caption = captionFor(state.rarity.key);
+
+    // 1. Auto-download the card image so the user can attach it to the tweet
     const filename = `hh-goa-2026-builder-id-${state.cardNumber}.png`;
-    const shareUrl = await createShareUrl();
+    downloadBlob(state.lastBlob, filename);
 
-    if (!shareUrl) {
-      showToast("Couldn't create a link for this card. Download it instead.");
-      return;
-    }
+    // 2. Build the pre-filled tweet caption
+    const caption = captionFor(state.rarity.key, state.name, state.builderClass);
 
-    if (state.sharedCard) {
-      const copied = await copyText(shareUrl);
-      showToast(copied ? "Card link copied" : "Select and copy the card URL from your browser.");
-      return;
-    }
+    // 3. Open Twitter/X Web Intent with pre-filled text
+    const tweetUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(caption)}`;
+    window.open(tweetUrl, "_blank", "noopener,noreferrer");
 
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: "My HH Goa Builder ID", text: caption, url: shareUrl });
-        return;
-      } catch (err) {
-        if (err && err.name === "AbortError") return;
-      }
-    }
-
-    const copied = await copyText(shareUrl);
-    showToast(copied ? "Card link copied — paste it anywhere" : "Card link ready — copy it from your browser.");
+    showToast("Image saved — attach it to your tweet! 🌴");
   });
 
   async function createShareUrl() {
