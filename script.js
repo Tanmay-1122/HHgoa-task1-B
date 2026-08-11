@@ -213,13 +213,19 @@
       el.style.animationDelay = `${delay}ms`;
       el.classList.add(cls);
 
-      el.addEventListener("animationend", () => {
+      const reveal = () => {
         el.classList.remove(cls);
         el.style.opacity = "1";
-      }, { once: true });
+        el.style.transform = "";
+      };
+
+      el.addEventListener("animationend", reveal, { once: true });
+      // Safety fallback: if animationend never fires, force visible after delay + 1.2s
+      setTimeout(reveal, delay + 1200);
     });
   }
   setupEntranceAnimations();
+
 
   /* =========================================================
      CARD SPECULAR HIGHLIGHT — follows mouse over generated card
@@ -239,8 +245,11 @@
     stageEl.addEventListener("pointerleave", () => {
       specular.style.setProperty("--spec-x", "50%");
       specular.style.setProperty("--spec-y", "50%");
+    });
   }
   setupSpecularHighlight();
+
+
 
   /* =========================================================
      INIT — preload frame + fonts so generation has zero fetch delay
