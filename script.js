@@ -111,7 +111,38 @@
      animations finish we stop those CSS keyframes and drive
      the full transform (base rotation + parallax) from JS.
      ========================================================= */
+  function processStarImageTransparency() {
+    const starImg = document.querySelector(".sun-disc");
+    if (!starImg) return;
+    const raw = new Image();
+    raw.crossOrigin = "anonymous";
+    raw.onload = () => {
+      try {
+        const c = document.createElement("canvas");
+        c.width = raw.naturalWidth;
+        c.height = raw.naturalHeight;
+        const ctx = c.getContext("2d");
+        ctx.drawImage(raw, 0, 0);
+        const imgData = ctx.getImageData(0, 0, c.width, c.height);
+        const data = imgData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i], g = data[i + 1], b = data[i + 2];
+          if (r > 215 && g > 215 && b > 215) {
+            data[i + 3] = 0;
+          }
+        }
+        ctx.putImageData(imgData, 0, 0);
+        starImg.src = c.toDataURL("image/png");
+        starImg.style.mixBlendMode = "normal";
+      } catch (e) {
+        // Keep CSS mix-blend-mode: multiply as fallback
+      }
+    };
+    raw.src = "assets/JOJO-Star.png";
+  }
+
   function setupDepthInteractions() {
+    processStarImageTransparency();
     const heroStage   = document.querySelector(".hero-stage");
     const passport    = document.querySelector(".hero-passport");
     const sunDisc     = document.querySelector(".sun-disc");
@@ -533,6 +564,213 @@
   }
 
   /* =========================================================
+     CUSTOM SELECT COMPONENT
+     ========================================================= */
+  const OPTION_ICONS = {
+    "AI / ML": "🧠",
+    "Frontend": "🖥️",
+    "Backend / Infra": "⚙️",
+    "Mobile": "📱",
+    "Design": "🎨",
+    "Product": "📦",
+    "Web3 / Crypto": "⛓️",
+    "Data": "📊",
+    "Security": "🛡️",
+    "DevRel / Community": "🌐",
+    "Builder": "🛠️",
+    "Founder": "🚀",
+    "Engineer": "💻",
+    "Designer": "🎨",
+    "Product person": "💡",
+    "Researcher": "🔬",
+    "Creator": "✨",
+    "Community lead": "🤝",
+    "Student": "🎓",
+    "Write your own…": "✍️",
+    "Write your own...": "✍️"
+  };
+
+  function getOptionIcon(text) {
+    return OPTION_ICONS[text] || "✦";
+  }
+
+  function initCustomSelect(selectEl) {
+    if (!selectEl || selectEl.dataset.customSelectInit) return;
+    selectEl.dataset.customSelectInit = "true";
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "custom-select-container";
+
+    selectEl.classList.add("native-select-hidden");
+    selectEl.parentNode.insertBefore(wrapper, selectEl);
+    wrapper.appendChild(selectEl);
+
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "custom-select-trigger";
+    trigger.setAttribute("aria-haspopup", "listbox");
+    trigger.setAttribute("aria-expanded", "false");
+
+    const labelSpan = document.createElement("span");
+    labelSpan.className = "custom-select-label";
+
+    const arrowSpan = document.createElement("span");
+    arrowSpan.className = "custom-select-arrow";
+    arrowSpan.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+
+    trigger.appendChild(labelSpan);
+    trigger.appendChild(arrowSpan);
+    wrapper.appendChild(trigger);
+
+    const menu = document.createElement("div");
+    menu.className = "custom-select-menu";
+
+    const list = document.createElement("ul");
+    list.className = "custom-select-options";
+    list.setAttribute("role", "listbox");
+    menu.appendChild(list);
+    wrapper.appendChild(menu);
+
+    function updateTriggerLabel() {
+      const selectedOpt = selectEl.options[selectEl.selectedIndex];
+      if (selectedOpt && selectedOpt.value) {
+        const icon = getOptionIcon(selectedOpt.text);
+        labelSpan.innerHTML = `<span class="trigger-icon">${icon}</span><span class="trigger-text">${selectedOpt.text}</span>`;
+        trigger.classList.remove("is-placeholder");
+      } else {
+        const placeholderText = (selectedOpt && selectedOpt.text) ? selectedOpt.text : "Select option";
+        labelSpan.innerHTML = `<span class="trigger-text trigger-placeholder">${placeholderText}</span>`;
+        trigger.classList.add("is-placeholder");
+      }
+    }
+
+    function renderOptions() {
+      list.innerHTML = "";
+      Array.from(selectEl.options).forEach((opt) => {
+        const li = document.createElement("li");
+        li.className = "custom-select-option";
+        if (opt.disabled) {
+          li.classList.add("is-header");
+          li.textContent = opt.text;
+        } else {
+          li.setAttribute("role", "option");
+          li.setAttribute("data-value", opt.value);
+          if (opt.value === selectEl.value) {
+            li.classList.add("is-selected");
+            li.setAttribute("aria-selected", "true");
+          }
+          if (opt.value === "__custom__") {
+            li.classList.add("is-custom-option");
+          }
+
+          const iconSpan = document.createElement("span");
+          iconSpan.className = "option-icon";
+          iconSpan.textContent = getOptionIcon(opt.text);
+
+          const textSpan = document.createElement("span");
+          textSpan.className = "option-text";
+          textSpan.textContent = opt.text;
+
+          const checkSpan = document.createElement("span");
+          checkSpan.className = "option-check";
+          checkSpan.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+
+          const leftGroup = document.createElement("div");
+          leftGroup.className = "option-left";
+          leftGroup.appendChild(iconSpan);
+          leftGroup.appendChild(textSpan);
+
+          li.appendChild(leftGroup);
+          li.appendChild(checkSpan);
+
+          li.addEventListener("click", (e) => {
+            e.stopPropagation();
+            selectValue(opt.value);
+            closeMenu();
+          });
+        }
+        list.appendChild(li);
+      });
+      updateTriggerLabel();
+    }
+
+    function selectValue(val) {
+      selectEl.value = val;
+      selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+      selectEl.dispatchEvent(new Event("input", { bubbles: true }));
+      renderOptions();
+    }
+
+    function toggleMenu() {
+      if (wrapper.classList.contains("is-open")) {
+        closeMenu();
+      } else {
+        openMenu();
+      }
+    }
+
+    function openMenu() {
+      document.querySelectorAll(".custom-select-container.is-open").forEach(c => {
+        if (c !== wrapper) c.classList.remove("is-open");
+      });
+      wrapper.classList.add("is-open");
+      trigger.setAttribute("aria-expanded", "true");
+      
+      const selectedItem = list.querySelector(".is-selected");
+      if (selectedItem) {
+        selectedItem.scrollIntoView({ block: "nearest" });
+      }
+    }
+
+    function closeMenu() {
+      wrapper.classList.remove("is-open");
+      trigger.setAttribute("aria-expanded", "false");
+    }
+
+    trigger.addEventListener("click", (e) => {
+      e.preventDefault();
+      toggleMenu();
+    });
+
+    trigger.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === " " || e.key === "Enter") {
+        e.preventDefault();
+        if (!wrapper.classList.contains("is-open")) {
+          openMenu();
+        } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          const options = Array.from(list.querySelectorAll(".custom-select-option:not(.is-header)"));
+          const currentIdx = options.findIndex(o => o.classList.contains("is-selected"));
+          let nextIdx = 0;
+          if (e.key === "ArrowDown") nextIdx = Math.min(options.length - 1, currentIdx + 1);
+          if (e.key === "ArrowUp") nextIdx = Math.max(0, currentIdx - 1);
+          if (options[nextIdx]) {
+            const val = options[nextIdx].getAttribute("data-value");
+            selectValue(val);
+          }
+        }
+      } else if (e.key === "Escape") {
+        closeMenu();
+      }
+    });
+
+    selectEl.addEventListener("change", () => {
+      renderOptions();
+    });
+
+    renderOptions();
+  }
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".custom-select-container")) {
+      document.querySelectorAll(".custom-select-container.is-open").forEach(c => {
+        c.classList.remove("is-open");
+        const tr = c.querySelector(".custom-select-trigger");
+        if (tr) tr.setAttribute("aria-expanded", "false");
+      });
+    }
+  });
+
+  /* =========================================================
      FORM
      ========================================================= */
   function updateGenerateEnabled() {
@@ -546,8 +784,29 @@
   function syncCustomField(select, customInput) {
     const isCustom = select.value === "__custom__";
     select.hidden = isCustom;
+    const wrapper = select.closest(".custom-select-container");
+    if (wrapper) wrapper.hidden = isCustom;
     customInput.hidden = !isCustom;
     customInput.required = isCustom;
+
+    let backBtn = customInput.parentElement.querySelector(`.custom-input-back-btn[data-for="${select.id}"]`);
+    if (isCustom && !backBtn) {
+      backBtn = document.createElement("button");
+      backBtn.type = "button";
+      backBtn.className = "custom-input-back-btn";
+      backBtn.dataset.for = select.id;
+      backBtn.textContent = "← Choose from options list";
+      backBtn.addEventListener("click", () => {
+        select.value = "";
+        customInput.value = "";
+        syncCustomField(select, customInput);
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      customInput.parentNode.insertBefore(backBtn, customInput.nextSibling);
+    } else if (backBtn) {
+      backBtn.hidden = !isCustom;
+    }
+
     if (isCustom) customInput.focus();
     updateGenerateEnabled();
   }
@@ -557,6 +816,11 @@
   inputRole.addEventListener("input", updateGenerateEnabled);
   inputRole.addEventListener("change", () => syncCustomField(inputRole, inputRoleCustom));
   inputRoleCustom.addEventListener("input", updateGenerateEnabled);
+
+  // Initialize custom select components
+  initCustomSelect(inputStack);
+  initCustomSelect(inputRole);
+
   form.addEventListener("reset", () => {
     setTimeout(() => {
       inputStack.hidden = false;
@@ -565,6 +829,15 @@
       inputRoleCustom.hidden = true;
       inputStackCustom.required = false;
       inputRoleCustom.required = false;
+      document.querySelectorAll(".custom-select-container").forEach(c => {
+        c.hidden = false;
+      });
+      document.querySelectorAll(".custom-input-back-btn").forEach(b => {
+        b.hidden = true;
+      });
+      [inputStack, inputRole].forEach(sel => {
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+      });
     });
   });
 
