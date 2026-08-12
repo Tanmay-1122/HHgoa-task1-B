@@ -116,27 +116,30 @@
     {
       // tempelete1.png — wooden signpost (3 boards, transparent PNG)
       src: "assets/tempelete1.png",
+      fontFamily: '"Caveat", cursive',
       zones: [
         // Top board
-        { x: 0.16, y: 0.10, w: 0.68, h: 0.18, fontWeight: "700", color: "#2c1a0a", align: "center" },
+        { x: 0.16, y: 0.11, w: 0.68, h: 0.18, fontWeight: "700", color: "#2c1a0a", align: "center", baseFontSize: 36 },
         // Middle green board
-        { x: 0.17, y: 0.31, w: 0.66, h: 0.18, fontWeight: "600", color: "#e8f5e9", align: "center" },
+        { x: 0.17, y: 0.32, w: 0.66, h: 0.18, fontWeight: "700", color: "#ffffff", align: "center", baseFontSize: 34 },
         // Bottom board
-        { x: 0.16, y: 0.49, w: 0.68, h: 0.18, fontWeight: "700", color: "#2c1a0a", align: "center" },
+        { x: 0.16, y: 0.50, w: 0.68, h: 0.18, fontWeight: "700", color: "#2c1a0a", align: "center", baseFontSize: 36 },
       ],
     },
     {
       // tempelete2.png — yellow stamp postcard (transparent PNG)
       src: "assets/tempelete2.png",
+      fontFamily: '"Caveat", cursive',
       zones: [
-        { x: 0.18, y: 0.20, w: 0.48, h: 0.58, fontWeight: "700", color: "#1a0a00", align: "center" },
+        { x: 0.16, y: 0.18, w: 0.48, h: 0.62, fontWeight: "700", color: "#1a0a00", align: "center", baseFontSize: 42 },
       ],
     },
     {
       // tempelete3.png — beach banner (transparent PNG)
       src: "assets/tempelete3.png",
+      fontFamily: '"Caveat", cursive',
       zones: [
-        { x: 0.28, y: 0.22, w: 0.44, h: 0.52, fontWeight: "800", color: "#1a0a00", align: "center" },
+        { x: 0.26, y: 0.20, w: 0.46, h: 0.56, fontWeight: "700", color: "#1a0a00", align: "center", baseFontSize: 44 },
       ],
     },
   ];
@@ -1113,7 +1116,7 @@
     // 4. text block
     const tx0 = TEXT_X0 * CANVAS_W;
     const tx1 = TEXT_X1 * CANVAS_W;
-    const maxTextWidth = tx1 - tx0;
+    const maxTextWidth = state.note ? (0.38 * CANVAS_W) : (tx1 - tx0);
     let cursorY = TEXT_Y0 * CANVAS_H;
 
     ctx.textBaseline = "top";
@@ -1248,42 +1251,36 @@
     try {
       const img = await loadImage(tmpl.src);
 
-      // --- Sticker placement on the card ---
       const aspect = (img.naturalWidth && img.naturalHeight)
         ? (img.naturalWidth / img.naturalHeight)
         : 1.4;
 
       let STICKER_W, STICKER_H;
       if (aspect < 1.1) {
-        // Square/portrait signpost (tempelete1.png)
-        STICKER_H = Math.round(CANVAS_H * 0.52);
+        // Signpost (tempelete1.png) - square/portrait
+        STICKER_H = Math.round(CANVAS_H * 0.46);
         STICKER_W = Math.round(STICKER_H * aspect);
       } else {
         // Landscape postcard/banner (tempelete2.png / tempelete3.png)
-        STICKER_W = Math.round(CANVAS_W * 0.38);
+        STICKER_W = Math.round(CANVAS_W * 0.26);
         STICKER_H = Math.round(STICKER_W / aspect);
       }
 
-      const STICKER_CX = Math.round(CANVAS_W * 0.68);
-      const STICKER_CY = Math.round(CANVAS_H * 0.49);
-      const STICKER_X = STICKER_CX - STICKER_W / 2;
-      const STICKER_Y = STICKER_CY - STICKER_H / 2;
+      // Position: placed in the right area of the card, completely clear of text block
+      const STICKER_CX = Math.round(CANVAS_W * 0.81);
+      const STICKER_CY = Math.round(CANVAS_H * 0.48);
+      const TILT_DEG = -4;
 
-      // Slight tilt looks like a real sticker pasted on the card
-      const TILT_DEG = -3;
-
-      // 1. Render template + text onto an offscreen canvas at STICKER_W x STICKER_H
       const off = document.createElement("canvas");
       off.width = STICKER_W;
       off.height = STICKER_H;
       const oCtx = off.getContext("2d");
 
-      // Draw the template image
       oCtx.drawImage(img, 0, 0, STICKER_W, STICKER_H);
 
-      // Draw text onto the offscreen canvas
+      const fontFam = tmpl.fontFamily || '"Caveat", cursive';
+
       if (tmpl.zones.length === 3) {
-        // Wooden signpost: split note across 3 boards
         const boardChunks = splitTextForBoards(state.note, 3);
         tmpl.zones.forEach((zone, idx) => {
           const chunk = boardChunks[idx];
@@ -1295,20 +1292,19 @@
           const zw = zone.w * STICKER_W;
           const zh = zone.h * STICKER_H;
 
-          // Auto-fit font size from 28px down
-          let fontSize = 28;
+          let fontSize = Math.round((zone.baseFontSize || 34) * (STICKER_W / 500));
+          fontSize = Math.max(14, fontSize);
           oCtx.textBaseline = "middle";
           oCtx.textAlign = "center";
-          oCtx.font = `${zone.fontWeight} ${fontSize}px "DM Sans"`;
-          while (oCtx.measureText(text).width > zw && fontSize > 10) {
+          oCtx.font = `${zone.fontWeight} ${fontSize}px ${fontFam}`;
+          while (oCtx.measureText(text).width > zw && fontSize > 11) {
             fontSize -= 1;
-            oCtx.font = `${zone.fontWeight} ${fontSize}px "DM Sans"`;
+            oCtx.font = `${zone.fontWeight} ${fontSize}px ${fontFam}`;
           }
           oCtx.fillStyle = zone.color;
           oCtx.fillText(text, zx + zw / 2, zy + zh / 2);
         });
       } else {
-        // Single text zone: stamp or banner
         const zone = tmpl.zones[0];
         const zx = zone.x * STICKER_W;
         const zy = zone.y * STICKER_H;
@@ -1319,18 +1315,19 @@
         oCtx.textAlign = zone.align || "center";
         oCtx.fillStyle = zone.color;
 
-        let fontSize = 32;
+        let fontSize = Math.round((zone.baseFontSize || 40) * (STICKER_W / 416));
+        fontSize = Math.max(18, fontSize);
         let lines = [];
         do {
-          oCtx.font = `${zone.fontWeight} ${fontSize}px "DM Sans"`;
+          oCtx.font = `${zone.fontWeight} ${fontSize}px ${fontFam}`;
           lines = wrapText(oCtx, state.note, zw);
-          const totalH = lines.length * fontSize * 1.25;
-          if (totalH <= zh || fontSize <= 12) break;
+          const totalH = lines.length * fontSize * 1.15;
+          if (totalH <= zh || fontSize <= 14) break;
           fontSize -= 2;
-        } while (fontSize > 10);
+        } while (fontSize > 12);
 
-        oCtx.font = `${zone.fontWeight} ${fontSize}px "DM Sans"`;
-        const lineHeight = fontSize * 1.3;
+        oCtx.font = `${zone.fontWeight} ${fontSize}px ${fontFam}`;
+        const lineHeight = fontSize * 1.18;
         const totalHeight = lines.length * lineHeight;
         const startY = zy + (zh - totalHeight) / 2;
 
@@ -1340,14 +1337,11 @@
         });
       }
 
-      // 2. Composite the offscreen canvas onto the main card ctx with tilt
       ctx.save();
-      // Drop shadow for sticker pasted feel
-      ctx.shadowColor = "rgba(0,0,0,0.32)";
-      ctx.shadowBlur = 20;
+      ctx.shadowColor = "rgba(1, 30, 15, 0.40)";
+      ctx.shadowBlur = 16;
       ctx.shadowOffsetX = 5;
-      ctx.shadowOffsetY = 7;
-      // Rotate around sticker center point
+      ctx.shadowOffsetY = 8;
       ctx.translate(STICKER_CX, STICKER_CY);
       ctx.rotate((TILT_DEG * Math.PI) / 180);
       ctx.drawImage(off, -STICKER_W / 2, -STICKER_H / 2, STICKER_W, STICKER_H);
