@@ -55,6 +55,7 @@
     photoEl: null,      // downscaled HTMLImageElement, ready to draw
     faceCenter: null,   // {x,y} fraction of photo, or null
     photoPosition: null, // editable crop focus point, {x,y} fractions of source image
+    photoZoom: 1.0,     // zoom level (1.0 to 3.5)
     name: "",
     stack: "",
     role: "",
@@ -514,6 +515,7 @@
       state.photoEl = bitmap;
       state.faceCenter = await detectFaceCenter(bitmap);
       state.photoPosition = state.faceCenter || { x: 0.5, y: 0.42 };
+      state.photoZoom = 1.0;
 
       drawPreview(bitmap);
       dropzoneEmpty.hidden = true;
@@ -592,44 +594,94 @@
 
   // Draws straight from the bitmap into the preview <canvas> — again, no
   // toDataURL involved, just a cover-fit drawImage.
+  // Draws straight from the bitmap into the preview <canvas> — again, no
+  // toDataURL involved, just a cover-fit drawImage.
   function drawPreview(bitmap) {
     const pctx = dropzonePreview.getContext("2d");
     const cw = dropzonePreview.width, ch = dropzonePreview.height;
     const focus = state.photoPosition || { x: 0.5, y: 0.42 };
-    const crop = coverCropRect(bitmap.width, bitmap.height, cw, ch, focus.x, focus.y);
+    const crop = coverCropRect(bitmap.width, bitmap.height, cw, ch, focus.x, focus.y, state.photoZoom || 1.0);
     pctx.clearRect(0, 0, cw, ch);
     pctx.drawImage(bitmap, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, cw, ch);
   }
 
-  let photoDrag = null;
+  const activePointers = new Map();
+  let initialPinchDist = null;
+  let initialZoom = 1.0;
+
   dropzonePreview.addEventListener("pointerdown", (event) => {
     if (!state.photoEl) return;
     event.preventDefault();
     event.stopPropagation();
-    dropzonePreview.setPointerCapture(event.pointerId);
-    photoDrag = { id: event.pointerId, x: event.clientX, y: event.clientY };
+    try { dropzonePreview.setPointerCapture(event.pointerId); } catch {}
+
+    activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     dropzone.classList.add("is-photo-dragging");
+
+    if (activePointers.size === 2) {
+      const points = Array.from(activePointers.values());
+      initialPinchDist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+      initialZoom = state.photoZoom || 1.0;
+    }
   });
+
   dropzonePreview.addEventListener("pointermove", (event) => {
-    if (!photoDrag || photoDrag.id !== event.pointerId || !state.photoEl) return;
-    const rect = dropzonePreview.getBoundingClientRect();
-    const dx = event.clientX - photoDrag.x;
-    const dy = event.clientY - photoDrag.y;
-    const focus = state.photoPosition || { x: 0.5, y: 0.42 };
-    focus.x = Math.max(0.05, Math.min(0.95, focus.x - (dx / rect.width) * 0.62));
-    focus.y = Math.max(0.05, Math.min(0.95, focus.y - (dy / rect.height) * 0.62));
-    state.photoPosition = focus;
-    photoDrag.x = event.clientX;
-    photoDrag.y = event.clientY;
-    drawPreview(state.photoEl);
+    if (!activePointers.has(event.pointerId) || !state.photoEl) return;
+    const prev = activePointers.get(event.pointerId);
+    activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (activePointers.size >= 2 && initialPinchDist) {
+      // PINCH-TO-ZOOM on touch screen (2 fingers)
+      const points = Array.from(activePointers.values());
+      const currentDist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+      if (currentDist > 0) {
+        const scale = currentDist / initialPinchDist;
+        state.photoZoom = Math.max(1.0, Math.min(3.5, initialZoom * scale));
+        drawPreview(state.photoEl);
+      }
+    } else if (activePointers.size === 1) {
+      // PAN / DRAG TO MOVE (1 finger / pointer)
+      const rect = dropzonePreview.getBoundingClientRect();
+      const dx = event.clientX - prev.x;
+      const dy = event.clientY - prev.y;
+
+      const focus = state.photoPosition || { x: 0.5, y: 0.42 };
+      const currentZoom = state.photoZoom || 1.0;
+
+      // Natural 1:1 pan with zoom-scaled sensitivity
+      const panSensitivity = 1.0 / (currentZoom * 0.95);
+      focus.x = Math.max(0.02, Math.min(0.98, focus.x - (dx / rect.width) * panSensitivity));
+      focus.y = Math.max(0.02, Math.min(0.98, focus.y - (dy / rect.height) * panSensitivity));
+
+      state.photoPosition = focus;
+      drawPreview(state.photoEl);
+    }
   });
+
   function stopPhotoDrag(event) {
-    if (!photoDrag || (event && photoDrag.id !== event.pointerId)) return;
-    photoDrag = null;
-    dropzone.classList.remove("is-photo-dragging");
+    if (event && activePointers.has(event.pointerId)) {
+      activePointers.delete(event.pointerId);
+      try { dropzonePreview.releasePointerCapture(event.pointerId); } catch {}
+    }
+    if (activePointers.size < 2) {
+      initialPinchDist = null;
+    }
+    if (activePointers.size === 0) {
+      dropzone.classList.remove("is-photo-dragging");
+    }
   }
+
   dropzonePreview.addEventListener("pointerup", stopPhotoDrag);
   dropzonePreview.addEventListener("pointercancel", stopPhotoDrag);
+
+  // Mouse Wheel / Trackpad scroll zoom
+  dropzonePreview.addEventListener("wheel", (event) => {
+    if (!state.photoEl) return;
+    event.preventDefault();
+    const delta = event.deltaY < 0 ? 0.12 : -0.12;
+    state.photoZoom = Math.max(1.0, Math.min(3.5, (state.photoZoom || 1.0) + delta));
+    drawPreview(state.photoEl);
+  }, { passive: false });
 
   // Auto-fit only — no manual crop step. Bias the crop toward a detected
   // face when the browser supports it; otherwise a plain center-crop.
@@ -1006,12 +1058,16 @@
   /* =========================================================
      CANVAS RENDER
      ========================================================= */
-  function coverCropRect(srcW, srcH, targetW, targetH, biasX, biasY) {
+  function coverCropRect(srcW, srcH, targetW, targetH, biasX, biasY, zoom = 1.0) {
     const srcRatio = srcW / srcH;
     const targetRatio = targetW / targetH;
     let cw, ch;
     if (srcRatio > targetRatio) { ch = srcH; cw = ch * targetRatio; }
     else { cw = srcW; ch = cw / targetRatio; }
+
+    const z = Math.max(1.0, Math.min(3.5, zoom || 1.0));
+    cw = cw / z;
+    ch = ch / z;
 
     const bx = biasX == null ? 0.5 : biasX;
     const by = biasY == null ? 0.5 : biasY;
@@ -1097,7 +1153,7 @@
       const pw = px1 - px0, ph = py1 - py0;
 
       const bias = state.photoPosition || state.faceCenter || { x: 0.5, y: 0.42 };
-      const crop = coverCropRect(state.photoEl.width, state.photoEl.height, pw, ph, bias.x, bias.y);
+      const crop = coverCropRect(state.photoEl.width, state.photoEl.height, pw, ph, bias.x, bias.y, state.photoZoom || 1.0);
 
       ctx.save();
       roundRectPath(ctx, px0, py0, pw, ph, 10);
@@ -1116,7 +1172,7 @@
     // 4. text block
     const tx0 = TEXT_X0 * CANVAS_W;
     const tx1 = TEXT_X1 * CANVAS_W;
-    const maxTextWidth = state.note ? (0.38 * CANVAS_W) : (tx1 - tx0);
+    const maxTextWidth = state.note ? (0.33 * CANVAS_W) : (tx1 - tx0);
     let cursorY = TEXT_Y0 * CANVAS_H;
 
     ctx.textBaseline = "top";
@@ -1266,10 +1322,10 @@
         STICKER_H = Math.round(STICKER_W / aspect);
       }
 
-      // Position: placed in the right area of the card, completely clear of text block
+      // Position: top-right corner of the card, directly under the GOA BEACH board & house
       const STICKER_CX = Math.round(CANVAS_W * 0.81);
-      const STICKER_CY = Math.round(CANVAS_H * 0.48);
-      const TILT_DEG = -4;
+      const STICKER_CY = Math.round(CANVAS_H * 0.33);
+      const TILT_DEG = -3;
 
       const off = document.createElement("canvas");
       off.width = STICKER_W;
@@ -1428,6 +1484,7 @@
     state.photoEl = null;
     state.faceCenter = null;
     state.photoPosition = null;
+    state.photoZoom = 1.0;
     state.note = "";
     inputNote.value = "";
     noteWordCount.textContent = "0 / 20 words";
@@ -1451,17 +1508,30 @@
   /* =========================================================
      DOWNLOAD + SHARE
      ========================================================= */
-  function captionFor(rarityKey, name, builderClass) {
-    const nameTag = name ? `${name} ` : "";
-    const classTag = builderClass ? `"${builderClass}" ` : "";
-    const tags = "#HackerHouseGoa #FrameInGoa";
-    const byRarity = {
-      common:    `${nameTag}just got their Builder ID for HH Goa 2026 🌴 ${classTag}${tags}`,
-      rare:      `${nameTag}pulled a RARE Builder ID at HH Goa 2026 💫 ${classTag}${tags}`,
-      epic:      `${nameTag}got an EPIC Builder ID at HH Goa 2026 🔥 ${classTag}${tags}`,
-      legendary: `${nameTag}just pulled LEGENDARY at HH Goa 2026 ⚡️🏆 ${classTag}${tags}`,
+  function captionFor(rarityKey, name, builderClass, note) {
+    const rarityEmojis = {
+      common: "🌴",
+      rare: "💫",
+      epic: "🔥",
+      legendary: "⚡️🏆",
     };
-    return byRarity[rarityKey] || byRarity.common;
+    const emoji = rarityEmojis[rarityKey] || "🌴";
+    const rarityUpper = (rarityKey || "COMMON").toUpperCase();
+
+    let text = `Just generated my Builder ID for HH Goa 2026 🌴\n`;
+
+    if (note && note.trim()) {
+      text += `\n"${note.trim()}"\n`;
+    }
+
+    if (builderClass) {
+      text += `\nClass: ${builderClass}`;
+    }
+    text += `\nRarity: ${rarityUpper} ${emoji}\n`;
+    text += `\nGet yours here 👇\nhttps://h-hgoa-task1-b.vercel.app/\n`;
+    text += `\n#HackerHouseGoa #FrameInGoa`;
+
+    return text;
   }
 
   btnDownload.addEventListener("click", async () => {
@@ -1487,8 +1557,8 @@
     const filename = `hh-goa-2026-builder-id-${state.cardNumber}.png`;
     downloadBlob(state.lastBlob, filename);
 
-    // 2. Build the pre-filled tweet caption
-    const caption = captionFor(state.rarity.key, state.name, state.builderClass);
+    // 2. Build the pre-filled tweet caption (includes custom note if provided)
+    const caption = captionFor(state.rarity.key, state.name, state.builderClass, state.note);
 
     // 3. Open Twitter/X Web Intent with pre-filled text
     const tweetUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(caption)}`;
