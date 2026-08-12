@@ -1314,17 +1314,17 @@
       let STICKER_W, STICKER_H;
       if (aspect < 1.1) {
         // Signpost (tempelete1.png) - square/portrait
-        STICKER_H = Math.round(CANVAS_H * 0.46);
+        STICKER_H = Math.round(CANVAS_H * 0.35);
         STICKER_W = Math.round(STICKER_H * aspect);
       } else {
         // Landscape postcard/banner (tempelete2.png / tempelete3.png)
-        STICKER_W = Math.round(CANVAS_W * 0.26);
+        STICKER_W = Math.round(CANVAS_W * 0.20);
         STICKER_H = Math.round(STICKER_W / aspect);
       }
 
       // Position: top-right corner of the card, directly under the GOA BEACH board & house
-      const STICKER_CX = Math.round(CANVAS_W * 0.81);
-      const STICKER_CY = Math.round(CANVAS_H * 0.33);
+      const STICKER_CX = Math.round(CANVAS_W * 0.82);
+      const STICKER_CY = Math.round(CANVAS_H * 0.32);
       const TILT_DEG = -3;
 
       const off = document.createElement("canvas");
