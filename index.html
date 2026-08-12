@@ -108,6 +108,21 @@
           <input id="input-role-custom" class="custom-profile-input" type="text" maxlength="28" placeholder="Write your role…" hidden />
         </label>
 
+        <div class="field note-field">
+          <div class="note-field-header">
+            <span class="field-label">Your Note <span class="note-optional">(optional)</span></span>
+            <span id="note-word-count" class="note-word-count">0 / 20 words</span>
+          </div>
+          <textarea
+            id="input-note"
+            class="note-textarea"
+            maxlength="150"
+            placeholder="Something you're building, a shoutout, or just vibes… ✌️"
+            rows="3"
+          ></textarea>
+          <p id="note-warn" class="note-warn" hidden>Max 20 words — keep it punchy!</p>
+        </div>
+
         <button type="submit" id="btn-generate" class="btn btn--primary btn--full" disabled>
           Generate My Builder ID
         </button>
@@ -149,6 +164,15 @@
       <button id="btn-reroll" class="btn btn--ghost" type="button">Reroll class</button>
       <button id="btn-download" class="btn btn--secondary" type="button">Download</button>
       <button id="btn-share" class="btn btn--primary" type="button">&#x1D54F; Share to X</button>
+    </div>
+
+    <!-- Note sticker — shown only when user wrote a note -->
+    <div id="note-sticker-wrap" class="note-sticker-wrap" hidden>
+      <p class="note-sticker-label">YOUR GOA NOTE 🌴</p>
+      <div class="note-sticker-stage">
+        <canvas id="note-canvas" class="note-canvas" width="900" height="600"></canvas>
+      </div>
+      <button id="btn-download-note" class="btn btn--ghost btn--full" type="button" style="margin-top:10px;">Download Note Card</button>
     </div>
 
     <button id="btn-restart" class="btn btn--link" type="button">Start over with a new photo</button>

@@ -58,6 +58,8 @@
     name: "",
     stack: "",
     role: "",
+    note: "",
+    selectedTemplateIdx: 0,
     rerollSeed: 0,
     rarity: RARITIES[0],
     builderClass: "",
@@ -89,6 +91,9 @@
   const inputStackCustom = $("input-stack-custom");
   const inputRole = $("input-role");
   const inputRoleCustom = $("input-role-custom");
+  const inputNote = $("input-note");
+  const noteWordCount = $("note-word-count");
+  const noteWarn = $("note-warn");
   const btnGenerate = $("btn-generate");
   const panelInput = $("panel-input");
   const panelResult = $("panel-result");
@@ -102,6 +107,86 @@
   const btnShare = $("btn-share");
   const btnRestart = $("btn-restart");
   const toastEl = $("toast");
+  const noteStickerWrap = $("note-sticker-wrap");
+  const noteCanvas = $("note-canvas");
+  const noteCtx = noteCanvas.getContext("2d");
+  const btnDownloadNote = $("btn-download-note");
+
+  /* =========================================================
+     NOTE TEMPLATES — config for text placement per template
+     Each entry defines the text zones per template image.
+     ========================================================= */
+  const NOTE_TEMPLATES = [
+    {
+      // templete.png — wooden signpost (3 boards)
+      src: "assets/templete.png",
+      canvasW: 900, canvasH: 900,
+      zones: [
+        // Top board: wide cream plank
+        { x: 0.13, y: 0.192, w: 0.74, h: 0.118, font: '700 42px "DM Sans"', color: "#2c1a0a", align: "center", maxWords: 7, maxLines: 1 },
+        // Middle board: dark green narrow plank
+        { x: 0.14, y: 0.408, w: 0.72, h: 0.088, font: '600 34px "DM Sans"', color: "#e8f5e9", align: "center", maxWords: 6, maxLines: 1 },
+        // Bottom board: wide cream plank
+        { x: 0.13, y: 0.560, w: 0.74, h: 0.118, font: '700 42px "DM Sans"', color: "#2c1a0a", align: "center", maxWords: 7, maxLines: 1 },
+      ],
+    },
+    {
+      // tempelete2.png — yellow stamp postcard
+      src: "assets/tempelete2.png",
+      canvasW: 900, canvasH: 1300,
+      zones: [
+        // Main writing area (left of sunset illustration)
+        { x: 0.08, y: 0.37, w: 0.55, h: 0.38, font: '700 52px "DM Sans"', color: "#1a0a00", align: "left", maxWords: 20, maxLines: 4 },
+      ],
+    },
+    {
+      // tempelete3.png — beach banner (wide)
+      src: "assets/tempelete3.png",
+      canvasW: 1320, canvasH: 820,
+      zones: [
+        // Large center open area (past the palm tree, above the tribal border)
+        { x: 0.33, y: 0.14, w: 0.53, h: 0.62, font: '800 68px "DM Sans"', color: "#1a0a00", align: "center", maxWords: 20, maxLines: 3 },
+      ],
+    },
+  ];
+
+  /* =========================================================
+     NOTE WORD COUNTER
+     ========================================================= */
+  const NOTE_MAX_WORDS = 20;
+  let noteTemplateImg = null;
+  let noteTemplateConfig = null;
+
+  function countWords(text) {
+    return text.trim() === "" ? 0 : text.trim().split(/\s+/).length;
+  }
+
+  function clampNoteToWordLimit(text) {
+    const words = text.trim().split(/\s+/);
+    if (words.length <= NOTE_MAX_WORDS) return text;
+    return words.slice(0, NOTE_MAX_WORDS).join(" ");
+  }
+
+  inputNote.addEventListener("input", () => {
+    const words = countWords(inputNote.value);
+    noteWordCount.textContent = `${words} / ${NOTE_MAX_WORDS} words`;
+
+    if (words >= NOTE_MAX_WORDS) {
+      noteWordCount.classList.add("is-at-limit");
+      noteWordCount.classList.remove("is-near-limit");
+      // Hard-clamp
+      inputNote.value = clampNoteToWordLimit(inputNote.value);
+      noteWarn.hidden = false;
+      setTimeout(() => { noteWarn.hidden = true; }, 2500);
+    } else if (words >= NOTE_MAX_WORDS - 4) {
+      noteWordCount.classList.add("is-near-limit");
+      noteWordCount.classList.remove("is-at-limit");
+      noteWarn.hidden = true;
+    } else {
+      noteWordCount.classList.remove("is-near-limit", "is-at-limit");
+      noteWarn.hidden = true;
+    }
+  });
 
   /* =========================================================
      DEPTH INTERACTIONS
@@ -213,17 +298,24 @@
       }
     };
 
+    const isTouchDevice = () => window.matchMedia("(pointer: coarse)").matches || ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+
     const handlePointer = (clientX, clientY) => {
+      if (isTouchDevice()) return;
       activateParallax();
       tX = (clientX / window.innerWidth  - 0.5) * 2 * 28;
       tY = (clientY / window.innerHeight - 0.5) * 2 * 20;
       if (!frame) frame = requestAnimationFrame(animate);
     };
 
-    window.addEventListener("mousemove",   (e) => handlePointer(e.clientX, e.clientY), { passive: true });
-    document.addEventListener("mousemove", (e) => handlePointer(e.clientX, e.clientY), { passive: true });
     window.addEventListener("pointermove", (e) => {
-      if (e.pointerType !== "touch") handlePointer(e.clientX, e.clientY);
+      if (e.pointerType === "mouse") handlePointer(e.clientX, e.clientY);
+    }, { passive: true });
+
+    window.addEventListener("mousemove", (e) => {
+      if (e.pointerType === "mouse" || (!e.pointerType && !isTouchDevice())) {
+        handlePointer(e.clientX, e.clientY);
+      }
     }, { passive: true });
 
     if (cardStageEl) {
@@ -851,11 +943,14 @@
       state.name = inputName.value.trim();
       state.stack = getProfileValue(inputStack, inputStackCustom);
       state.role = getProfileValue(inputRole, inputRoleCustom);
+      state.note = clampNoteToWordLimit(inputNote.value.trim());
+      state.selectedTemplateIdx = Math.floor(Math.random() * NOTE_TEMPLATES.length);
       state.rerollSeed = 0;
       state.cardNumber = nextCardNumber();
       state.stampPositions = pickStampPositions();
       rollClassAndRarity();
       await renderCard();
+      await renderNote();
       showResultPanel();
     } catch (err) {
       console.error("Builder ID generation failed", err);
@@ -909,9 +1004,11 @@
 
   btnReroll.addEventListener("click", async () => {
     state.rerollSeed += 1;
+    state.selectedTemplateIdx = Math.floor(Math.random() * NOTE_TEMPLATES.length);
     state.stampPositions = pickStampPositions();
     rollClassAndRarity();
     await renderCard();
+    await renderNote();
   });
 
   /* =========================================================
@@ -1146,6 +1243,141 @@
   }
 
   /* =========================================================
+     NOTE RENDERING LOGIC — renders text onto chosen template
+     ========================================================= */
+  async function renderNote() {
+    if (!state.note) {
+      noteStickerWrap.hidden = true;
+      return;
+    }
+
+    const tmpl = NOTE_TEMPLATES[state.selectedTemplateIdx];
+    if (!tmpl) {
+      noteStickerWrap.hidden = true;
+      return;
+    }
+
+    try {
+      const img = await loadImage(tmpl.src);
+      noteCanvas.width = tmpl.canvasW;
+      noteCanvas.height = tmpl.canvasH;
+
+      noteCtx.clearRect(0, 0, tmpl.canvasW, tmpl.canvasH);
+      noteCtx.drawImage(img, 0, 0, tmpl.canvasW, tmpl.canvasH);
+
+      const W = tmpl.canvasW;
+      const H = tmpl.canvasH;
+
+      if (tmpl.zones.length === 3) {
+        // Template 1: Wooden signpost with 3 planks
+        const boardChunks = splitTextForBoards(state.note, 3);
+        tmpl.zones.forEach((zone, idx) => {
+          const words = boardChunks[idx];
+          if (!words || words.length === 0) return;
+          const text = words.join(" ");
+
+          const zx = zone.x * W;
+          const zy = zone.y * H;
+          const zw = zone.w * W;
+          const zh = zone.h * H;
+
+          const font = fitText(noteCtx, text, zone.font, zw, 18);
+          noteCtx.font = font;
+          noteCtx.fillStyle = zone.color;
+          noteCtx.textAlign = "center";
+          noteCtx.textBaseline = "middle";
+
+          const cx = zx + zw / 2;
+          const cy = zy + zh / 2;
+          noteCtx.fillText(text, cx, cy);
+        });
+      } else {
+        // Single text box template (Template 2 stamp or Template 3 banner)
+        const zone = tmpl.zones[0];
+        const zx = zone.x * W;
+        const zy = zone.y * H;
+        const zw = zone.w * W;
+        const zh = zone.h * H;
+
+        noteCtx.font = zone.font;
+        noteCtx.fillStyle = zone.color;
+        noteCtx.textAlign = zone.align || "center";
+        noteCtx.textBaseline = "top";
+
+        let fontTemplate = zone.font;
+        const match = fontTemplate.match(/(\d+)px/);
+        let fontSize = match ? parseInt(match[1], 10) : 48;
+
+        let lines = [];
+        do {
+          noteCtx.font = fontTemplate.replace(/\d+px/, fontSize + "px");
+          lines = wrapText(noteCtx, state.note, zw);
+          const totalH = lines.length * fontSize * 1.25;
+          if (totalH <= zh || fontSize <= 22) break;
+          fontSize -= 3;
+        } while (fontSize > 20);
+
+        noteCtx.font = fontTemplate.replace(/\d+px/, fontSize + "px");
+        const lineHeight = fontSize * 1.3;
+        const totalHeight = lines.length * lineHeight;
+        let startY = zy + (zh - totalHeight) / 2;
+
+        lines.forEach((line, i) => {
+          const lx = zone.align === "left" ? zx : zx + zw / 2;
+          noteCtx.fillText(line, lx, startY + i * lineHeight);
+        });
+      }
+
+      noteStickerWrap.hidden = false;
+    } catch (err) {
+      console.warn("Could not render note card", err);
+      noteStickerWrap.hidden = true;
+    }
+  }
+
+  function splitTextForBoards(text, boardCount) {
+    const words = text.trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return [];
+    if (words.length <= boardCount) {
+      return words.map((w) => [w]);
+    }
+    const perBoard = Math.ceil(words.length / boardCount);
+    const result = [];
+    for (let i = 0; i < boardCount; i++) {
+      const chunk = words.slice(i * perBoard, (i + 1) * perBoard);
+      if (chunk.length > 0) result.push(chunk);
+    }
+    return result;
+  }
+
+  function wrapText(ctx, text, maxWidth) {
+    const words = text.split(" ");
+    const lines = [];
+    let currentLine = "";
+    words.forEach((word) => {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      if (ctx.measureText(testLine).width > maxWidth && currentLine) {
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    });
+    if (currentLine) lines.push(currentLine);
+    return lines;
+  }
+
+  if (btnDownloadNote) {
+    btnDownloadNote.addEventListener("click", () => {
+      noteCanvas.toBlob((blob) => {
+        if (blob) {
+          downloadBlob(blob, `hh-goa-2026-note-${state.cardNumber}.png`);
+        }
+      }, "image/png", 0.95);
+    });
+  }
+
+  /* =========================================================
      PANEL SWITCHING + REVEAL
      ========================================================= */
   function showResultPanel() {
@@ -1190,6 +1422,11 @@
     state.photoEl = null;
     state.faceCenter = null;
     state.photoPosition = null;
+    state.note = "";
+    inputNote.value = "";
+    noteWordCount.textContent = "0 / 20 words";
+    noteWordCount.classList.remove("is-near-limit", "is-at-limit");
+    noteStickerWrap.hidden = true;
     form.reset();
     dropzoneEmpty.hidden = false;
     dropzonePreview.hidden = true;
