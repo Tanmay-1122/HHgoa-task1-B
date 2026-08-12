@@ -114,33 +114,29 @@
      ========================================================= */
   const NOTE_TEMPLATES = [
     {
-      // templete.png — wooden signpost (3 boards)
-      src: "assets/templete.png",
-      // native image aspect ratio (portrait square)
-      aspect: 900 / 900,
+      // tempelete1.png — wooden signpost (3 boards, transparent PNG)
+      src: "assets/tempelete1.png",
       zones: [
         // Top board
-        { x: 0.13, y: 0.192, w: 0.74, h: 0.118, fontWeight: "700", color: "#2c1a0a", align: "center" },
+        { x: 0.16, y: 0.10, w: 0.68, h: 0.18, fontWeight: "700", color: "#2c1a0a", align: "center" },
         // Middle green board
-        { x: 0.14, y: 0.408, w: 0.72, h: 0.088, fontWeight: "600", color: "#e8f5e9", align: "center" },
+        { x: 0.17, y: 0.31, w: 0.66, h: 0.18, fontWeight: "600", color: "#e8f5e9", align: "center" },
         // Bottom board
-        { x: 0.13, y: 0.560, w: 0.74, h: 0.118, fontWeight: "700", color: "#2c1a0a", align: "center" },
+        { x: 0.16, y: 0.49, w: 0.68, h: 0.18, fontWeight: "700", color: "#2c1a0a", align: "center" },
       ],
     },
     {
-      // tempelete2.png — yellow stamp postcard (portrait)
+      // tempelete2.png — yellow stamp postcard (transparent PNG)
       src: "assets/tempelete2.png",
-      aspect: 900 / 1300,
       zones: [
-        { x: 0.08, y: 0.37, w: 0.55, h: 0.38, fontWeight: "700", color: "#1a0a00", align: "left" },
+        { x: 0.18, y: 0.20, w: 0.48, h: 0.58, fontWeight: "700", color: "#1a0a00", align: "center" },
       ],
     },
     {
-      // tempelete3.png — beach banner (landscape)
+      // tempelete3.png — beach banner (transparent PNG)
       src: "assets/tempelete3.png",
-      aspect: 1320 / 820,
       zones: [
-        { x: 0.33, y: 0.14, w: 0.53, h: 0.62, fontWeight: "800", color: "#1a0a00", align: "center" },
+        { x: 0.28, y: 0.22, w: 0.44, h: 0.52, fontWeight: "800", color: "#1a0a00", align: "center" },
       ],
     },
   ];
@@ -1253,16 +1249,23 @@
       const img = await loadImage(tmpl.src);
 
       // --- Sticker placement on the card ---
-      // Place sticker centered on the right content area of the card.
-      // Card right content zone: x ≈ 0.38..0.97 (photo is left 0.14..0.36)
-      // We want a sticker that's clearly visible but doesn't dwarf the card.
-      const STICKER_W = Math.round(CANVAS_W * 0.37);  // ~592px wide
-      const STICKER_H = Math.round(STICKER_W / tmpl.aspect);
+      const aspect = (img.naturalWidth && img.naturalHeight)
+        ? (img.naturalWidth / img.naturalHeight)
+        : 1.4;
 
-      // Position: horizontally centered in the right portion of the card
-      // (mid-point of right zone is around 0.62 * CANVAS_W)
-      const STICKER_CX = Math.round(CANVAS_W * 0.68);  // center x of sticker
-      const STICKER_CY = Math.round(CANVAS_H * 0.50);  // vertically centered
+      let STICKER_W, STICKER_H;
+      if (aspect < 1.1) {
+        // Square/portrait signpost (tempelete1.png)
+        STICKER_H = Math.round(CANVAS_H * 0.52);
+        STICKER_W = Math.round(STICKER_H * aspect);
+      } else {
+        // Landscape postcard/banner (tempelete2.png / tempelete3.png)
+        STICKER_W = Math.round(CANVAS_W * 0.38);
+        STICKER_H = Math.round(STICKER_W / aspect);
+      }
+
+      const STICKER_CX = Math.round(CANVAS_W * 0.68);
+      const STICKER_CY = Math.round(CANVAS_H * 0.49);
       const STICKER_X = STICKER_CX - STICKER_W / 2;
       const STICKER_Y = STICKER_CY - STICKER_H / 2;
 
