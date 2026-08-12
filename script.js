@@ -107,45 +107,40 @@
   const btnShare = $("btn-share");
   const btnRestart = $("btn-restart");
   const toastEl = $("toast");
-  const noteStickerWrap = $("note-sticker-wrap");
-  const noteCanvas = $("note-canvas");
-  const noteCtx = noteCanvas.getContext("2d");
-  const btnDownloadNote = $("btn-download-note");
 
   /* =========================================================
-     NOTE TEMPLATES — config for text placement per template
-     Each entry defines the text zones per template image.
+     NOTE TEMPLATES — config for text zones within each sticker image.
+     Zones use fractions of the sticker image's own dimensions.
      ========================================================= */
   const NOTE_TEMPLATES = [
     {
       // templete.png — wooden signpost (3 boards)
       src: "assets/templete.png",
-      canvasW: 900, canvasH: 900,
+      // native image aspect ratio (portrait square)
+      aspect: 900 / 900,
       zones: [
-        // Top board: wide cream plank
-        { x: 0.13, y: 0.192, w: 0.74, h: 0.118, font: '700 42px "DM Sans"', color: "#2c1a0a", align: "center", maxWords: 7, maxLines: 1 },
-        // Middle board: dark green narrow plank
-        { x: 0.14, y: 0.408, w: 0.72, h: 0.088, font: '600 34px "DM Sans"', color: "#e8f5e9", align: "center", maxWords: 6, maxLines: 1 },
-        // Bottom board: wide cream plank
-        { x: 0.13, y: 0.560, w: 0.74, h: 0.118, font: '700 42px "DM Sans"', color: "#2c1a0a", align: "center", maxWords: 7, maxLines: 1 },
+        // Top board
+        { x: 0.13, y: 0.192, w: 0.74, h: 0.118, fontWeight: "700", color: "#2c1a0a", align: "center" },
+        // Middle green board
+        { x: 0.14, y: 0.408, w: 0.72, h: 0.088, fontWeight: "600", color: "#e8f5e9", align: "center" },
+        // Bottom board
+        { x: 0.13, y: 0.560, w: 0.74, h: 0.118, fontWeight: "700", color: "#2c1a0a", align: "center" },
       ],
     },
     {
-      // tempelete2.png — yellow stamp postcard
+      // tempelete2.png — yellow stamp postcard (portrait)
       src: "assets/tempelete2.png",
-      canvasW: 900, canvasH: 1300,
+      aspect: 900 / 1300,
       zones: [
-        // Main writing area (left of sunset illustration)
-        { x: 0.08, y: 0.37, w: 0.55, h: 0.38, font: '700 52px "DM Sans"', color: "#1a0a00", align: "left", maxWords: 20, maxLines: 4 },
+        { x: 0.08, y: 0.37, w: 0.55, h: 0.38, fontWeight: "700", color: "#1a0a00", align: "left" },
       ],
     },
     {
-      // tempelete3.png — beach banner (wide)
+      // tempelete3.png — beach banner (landscape)
       src: "assets/tempelete3.png",
-      canvasW: 1320, canvasH: 820,
+      aspect: 1320 / 820,
       zones: [
-        // Large center open area (past the palm tree, above the tribal border)
-        { x: 0.33, y: 0.14, w: 0.53, h: 0.62, font: '800 68px "DM Sans"', color: "#1a0a00", align: "center", maxWords: 20, maxLines: 3 },
+        { x: 0.33, y: 0.14, w: 0.53, h: 0.62, fontWeight: "800", color: "#1a0a00", align: "center" },
       ],
     },
   ];
@@ -950,7 +945,6 @@
       state.stampPositions = pickStampPositions();
       rollClassAndRarity();
       await renderCard();
-      await renderNote();
       showResultPanel();
     } catch (err) {
       console.error("Builder ID generation failed", err);
@@ -1008,7 +1002,6 @@
     state.stampPositions = pickStampPositions();
     rollClassAndRarity();
     await renderCard();
-    await renderNote();
   });
 
   /* =========================================================
@@ -1186,6 +1179,11 @@
 
     drawPassportStamps();
 
+    // Draw note sticker directly on the card frame (right side)
+    if (state.note) {
+      await drawNoteSticker();
+    }
+
     // update on-page tags to match
     tagRarity.textContent = state.rarity.label;
     tagRarity.dataset.rarity = state.rarity.key;
@@ -1243,95 +1241,116 @@
   }
 
   /* =========================================================
-     NOTE RENDERING LOGIC — renders text onto chosen template
+     NOTE STICKER — drawn directly onto the main card canvas
+     Position: right portion of the card frame
      ========================================================= */
-  async function renderNote() {
-    if (!state.note) {
-      noteStickerWrap.hidden = true;
-      return;
-    }
-
+  async function drawNoteSticker() {
+    if (!state.note) return;
     const tmpl = NOTE_TEMPLATES[state.selectedTemplateIdx];
-    if (!tmpl) {
-      noteStickerWrap.hidden = true;
-      return;
-    }
+    if (!tmpl) return;
 
     try {
       const img = await loadImage(tmpl.src);
-      noteCanvas.width = tmpl.canvasW;
-      noteCanvas.height = tmpl.canvasH;
 
-      noteCtx.clearRect(0, 0, tmpl.canvasW, tmpl.canvasH);
-      noteCtx.drawImage(img, 0, 0, tmpl.canvasW, tmpl.canvasH);
+      // --- Sticker placement on the card ---
+      // Place sticker centered on the right content area of the card.
+      // Card right content zone: x ≈ 0.38..0.97 (photo is left 0.14..0.36)
+      // We want a sticker that's clearly visible but doesn't dwarf the card.
+      const STICKER_W = Math.round(CANVAS_W * 0.37);  // ~592px wide
+      const STICKER_H = Math.round(STICKER_W / tmpl.aspect);
 
-      const W = tmpl.canvasW;
-      const H = tmpl.canvasH;
+      // Position: horizontally centered in the right portion of the card
+      // (mid-point of right zone is around 0.62 * CANVAS_W)
+      const STICKER_CX = Math.round(CANVAS_W * 0.68);  // center x of sticker
+      const STICKER_CY = Math.round(CANVAS_H * 0.50);  // vertically centered
+      const STICKER_X = STICKER_CX - STICKER_W / 2;
+      const STICKER_Y = STICKER_CY - STICKER_H / 2;
 
+      // Slight tilt looks like a real sticker pasted on the card
+      const TILT_DEG = -3;
+
+      // 1. Render template + text onto an offscreen canvas at STICKER_W x STICKER_H
+      const off = document.createElement("canvas");
+      off.width = STICKER_W;
+      off.height = STICKER_H;
+      const oCtx = off.getContext("2d");
+
+      // Draw the template image
+      oCtx.drawImage(img, 0, 0, STICKER_W, STICKER_H);
+
+      // Draw text onto the offscreen canvas
       if (tmpl.zones.length === 3) {
-        // Template 1: Wooden signpost with 3 planks
+        // Wooden signpost: split note across 3 boards
         const boardChunks = splitTextForBoards(state.note, 3);
         tmpl.zones.forEach((zone, idx) => {
-          const words = boardChunks[idx];
-          if (!words || words.length === 0) return;
-          const text = words.join(" ");
+          const chunk = boardChunks[idx];
+          if (!chunk || chunk.length === 0) return;
+          const text = chunk.join(" ");
 
-          const zx = zone.x * W;
-          const zy = zone.y * H;
-          const zw = zone.w * W;
-          const zh = zone.h * H;
+          const zx = zone.x * STICKER_W;
+          const zy = zone.y * STICKER_H;
+          const zw = zone.w * STICKER_W;
+          const zh = zone.h * STICKER_H;
 
-          const font = fitText(noteCtx, text, zone.font, zw, 18);
-          noteCtx.font = font;
-          noteCtx.fillStyle = zone.color;
-          noteCtx.textAlign = "center";
-          noteCtx.textBaseline = "middle";
-
-          const cx = zx + zw / 2;
-          const cy = zy + zh / 2;
-          noteCtx.fillText(text, cx, cy);
+          // Auto-fit font size from 28px down
+          let fontSize = 28;
+          oCtx.textBaseline = "middle";
+          oCtx.textAlign = "center";
+          oCtx.font = `${zone.fontWeight} ${fontSize}px "DM Sans"`;
+          while (oCtx.measureText(text).width > zw && fontSize > 10) {
+            fontSize -= 1;
+            oCtx.font = `${zone.fontWeight} ${fontSize}px "DM Sans"`;
+          }
+          oCtx.fillStyle = zone.color;
+          oCtx.fillText(text, zx + zw / 2, zy + zh / 2);
         });
       } else {
-        // Single text box template (Template 2 stamp or Template 3 banner)
+        // Single text zone: stamp or banner
         const zone = tmpl.zones[0];
-        const zx = zone.x * W;
-        const zy = zone.y * H;
-        const zw = zone.w * W;
-        const zh = zone.h * H;
+        const zx = zone.x * STICKER_W;
+        const zy = zone.y * STICKER_H;
+        const zw = zone.w * STICKER_W;
+        const zh = zone.h * STICKER_H;
 
-        noteCtx.font = zone.font;
-        noteCtx.fillStyle = zone.color;
-        noteCtx.textAlign = zone.align || "center";
-        noteCtx.textBaseline = "top";
+        oCtx.textBaseline = "top";
+        oCtx.textAlign = zone.align || "center";
+        oCtx.fillStyle = zone.color;
 
-        let fontTemplate = zone.font;
-        const match = fontTemplate.match(/(\d+)px/);
-        let fontSize = match ? parseInt(match[1], 10) : 48;
-
+        let fontSize = 32;
         let lines = [];
         do {
-          noteCtx.font = fontTemplate.replace(/\d+px/, fontSize + "px");
-          lines = wrapText(noteCtx, state.note, zw);
+          oCtx.font = `${zone.fontWeight} ${fontSize}px "DM Sans"`;
+          lines = wrapText(oCtx, state.note, zw);
           const totalH = lines.length * fontSize * 1.25;
-          if (totalH <= zh || fontSize <= 22) break;
-          fontSize -= 3;
-        } while (fontSize > 20);
+          if (totalH <= zh || fontSize <= 12) break;
+          fontSize -= 2;
+        } while (fontSize > 10);
 
-        noteCtx.font = fontTemplate.replace(/\d+px/, fontSize + "px");
+        oCtx.font = `${zone.fontWeight} ${fontSize}px "DM Sans"`;
         const lineHeight = fontSize * 1.3;
         const totalHeight = lines.length * lineHeight;
-        let startY = zy + (zh - totalHeight) / 2;
+        const startY = zy + (zh - totalHeight) / 2;
 
         lines.forEach((line, i) => {
           const lx = zone.align === "left" ? zx : zx + zw / 2;
-          noteCtx.fillText(line, lx, startY + i * lineHeight);
+          oCtx.fillText(line, lx, startY + i * lineHeight);
         });
       }
 
-      noteStickerWrap.hidden = false;
+      // 2. Composite the offscreen canvas onto the main card ctx with tilt
+      ctx.save();
+      // Drop shadow for sticker pasted feel
+      ctx.shadowColor = "rgba(0,0,0,0.32)";
+      ctx.shadowBlur = 20;
+      ctx.shadowOffsetX = 5;
+      ctx.shadowOffsetY = 7;
+      // Rotate around sticker center point
+      ctx.translate(STICKER_CX, STICKER_CY);
+      ctx.rotate((TILT_DEG * Math.PI) / 180);
+      ctx.drawImage(off, -STICKER_W / 2, -STICKER_H / 2, STICKER_W, STICKER_H);
+      ctx.restore();
     } catch (err) {
-      console.warn("Could not render note card", err);
-      noteStickerWrap.hidden = true;
+      console.warn("Could not draw note sticker on card", err);
     }
   }
 
@@ -1365,16 +1384,6 @@
     });
     if (currentLine) lines.push(currentLine);
     return lines;
-  }
-
-  if (btnDownloadNote) {
-    btnDownloadNote.addEventListener("click", () => {
-      noteCanvas.toBlob((blob) => {
-        if (blob) {
-          downloadBlob(blob, `hh-goa-2026-note-${state.cardNumber}.png`);
-        }
-      }, "image/png", 0.95);
-    });
   }
 
   /* =========================================================
@@ -1426,7 +1435,6 @@
     inputNote.value = "";
     noteWordCount.textContent = "0 / 20 words";
     noteWordCount.classList.remove("is-near-limit", "is-at-limit");
-    noteStickerWrap.hidden = true;
     form.reset();
     dropzoneEmpty.hidden = false;
     dropzonePreview.hidden = true;
