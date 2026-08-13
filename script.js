@@ -10,6 +10,12 @@
   const CANVAS_W = 1600;
   const CANVAS_H = 764; // matches frame aspect ratio (1546:738)
 
+  // Portrait frame — shared between editor preview AND final card render.
+  // The card's portrait slot (PHOTO_RECT × CANVAS) resolves to exactly these px.
+  // NEVER define separate dimensions for the editor and the card.
+  const PORTRAIT_FRAME_W = 352;    // px  (= (PHOTO_RECT.x1 - PHOTO_RECT.x0) * CANVAS_W)
+  const PORTRAIT_FRAME_H = 458.4;  // px  (= (PHOTO_RECT.y1 - PHOTO_RECT.y0) * CANVAS_H)
+
   // Photo slot — left portion of the cream field, clear of the palm tree & diya
   const PHOTO_RECT = { x0: 0.14, y0: 0.20, x1: 0.36, y1: 0.80 };
   // Text block — right portion of the cream field, clear of the jhumar chain & scooter
@@ -52,10 +58,12 @@
      STATE
      ========================================================= */
   const state = {
-    photoEl: null,      // downscaled HTMLImageElement, ready to draw
-    faceCenter: null,   // {x,y} fraction of photo, or null
-    photoPosition: null, // editable crop focus point, {x,y} fractions of source image
-    photoZoom: 1.0,     // zoom level (1.0 to 3.5)
+    photoEl: null,       // downscaled ImageBitmap or HTMLImageElement
+    faceCenter: null,    // {x,y} fraction of photo, or null
+    photoPosition: null, // legacy – kept for compat, unused by crop engine
+    photoPanNX: 0,       // normalized horizontal pan [-1 … +1], resolution-independent
+    photoPanNY: 0,       // normalized vertical pan   [-1 … +1], resolution-independent
+    photoZoom: 1.0,      // zoom scalar (1.0 – 3.5)
     name: "",
     stack: "",
     role: "",
@@ -163,20 +171,34 @@
   }
 
   function clampNoteToWordLimit(text) {
-    const words = text.trim().split(/\s+/);
-    if (words.length <= NOTE_MAX_WORDS) return text;
-    return words.slice(0, NOTE_MAX_WORDS).join(" ");
+    // Split preserving the trailing-space state so cursor doesn't jump.
+    const hasTrailingSpace = /\s$/.test(text);
+    const tokens = text.trim() === "" ? [] : text.trim().split(/\s+/);
+    if (tokens.length <= NOTE_MAX_WORDS) {
+      // At exactly the limit: strip any trailing space that would begin word 21.
+      if (tokens.length === NOTE_MAX_WORDS && hasTrailingSpace) {
+        return tokens.join(" "); // drop the trailing space
+      }
+      return text;
+    }
+    // Over the limit: keep only the first 20 words, no trailing space.
+    return tokens.slice(0, NOTE_MAX_WORDS).join(" ");
   }
 
   inputNote.addEventListener("input", () => {
+    // Always clamp first, then count.
+    const clamped = clampNoteToWordLimit(inputNote.value);
+    if (clamped !== inputNote.value) {
+      // Preserve caret position as close to end as possible.
+      inputNote.value = clamped;
+    }
+
     const words = countWords(inputNote.value);
     noteWordCount.textContent = `${words} / ${NOTE_MAX_WORDS} words`;
 
     if (words >= NOTE_MAX_WORDS) {
       noteWordCount.classList.add("is-at-limit");
       noteWordCount.classList.remove("is-near-limit");
-      // Hard-clamp
-      inputNote.value = clampNoteToWordLimit(inputNote.value);
       noteWarn.hidden = false;
       setTimeout(() => { noteWarn.hidden = true; }, 2500);
     } else if (words >= NOTE_MAX_WORDS - 4) {
@@ -568,12 +590,19 @@
       state.faceCenter = await detectFaceCenter(bitmap);
       state.photoZoom = 1.0;
       if (state.faceCenter) {
-        const scaleCover = Math.max(352 / bitmap.width, 458.4 / bitmap.height);
-        state.photoPanX = -(state.faceCenter.x - 0.5) * bitmap.width * scaleCover;
-        state.photoPanY = -(state.faceCenter.y - 0.5) * bitmap.height * scaleCover;
+        // Convert detected face center (0–1 fractions) to normalized pan.
+        // Positive panN → image shifts right/down in the viewport.
+        const sc = Math.max(PORTRAIT_FRAME_W / bitmap.width, PORTRAIT_FRAME_H / bitmap.height);
+        const maxPxX = Math.max(0, (bitmap.width  * sc - PORTRAIT_FRAME_W) / 2);
+        const maxPxY = Math.max(0, (bitmap.height * sc - PORTRAIT_FRAME_H) / 2);
+        // Pan needed to center face: framePx = -(faceCenter - 0.5) * imgSize * sc
+        const panPxX = -(state.faceCenter.x - 0.5) * bitmap.width  * sc;
+        const panPxY = -(state.faceCenter.y - 0.5) * bitmap.height * sc;
+        state.photoPanNX = maxPxX > 0 ? Math.max(-1, Math.min(1, panPxX / maxPxX)) : 0;
+        state.photoPanNY = maxPxY > 0 ? Math.max(-1, Math.min(1, panPxY / maxPxY)) : 0;
       } else {
-        state.photoPanX = 0;
-        state.photoPanY = 0;
+        state.photoPanNX = 0;
+        state.photoPanNY = 0;
       }
       if (zoomSlider) zoomSlider.value = "1.00";
 
@@ -658,32 +687,49 @@
   // Draws straight from the bitmap into the preview <canvas> — again, no
   // toDataURL involved, just a cover-fit drawImage.
   /* =========================================================
-     CROP ENGINE & DRAG STATE (Single Source of Truth)
+     PORTRAIT TRANSFORM — SINGLE SOURCE OF TRUTH
+
+     calculatePortraitTransform is the ONE function that computes
+     how to draw the user's photo into a portrait frame.
+     It is used by BOTH the editor preview (drawPreview) and the
+     final card renderer (renderCard).  Never compute the crop
+     independently in either place.
+
+     Parameters:
+       imgW, imgH   — source image dimensions (pixels)
+       frameW, frameH — portrait frame dimensions (pixels)
+       panNX, panNY — normalized pan, each in [-1 … +1]
+                      ±1 = image shifted as far as allowed without
+                      leaving any empty space inside the frame.
+                      0 = centered.  Resolution-independent.
+       zoom         — scale multiplier on top of the cover fit (1.0 = cover only)
+
+     Returns: { sx, sy, sw, sh } — source rectangle for drawImage.
      ========================================================= */
-  function getCropRect(srcW, srcH, frameW, frameH, panX, panY, zoom) {
+  function calculatePortraitTransform(imgW, imgH, frameW, frameH, panNX, panNY, zoom) {
     const z = Math.max(1.0, Math.min(3.5, zoom || 1.0));
-    const scaleCover = Math.max(frameW / srcW, frameH / srcH);
+    const coverScale = Math.max(frameW / imgW, frameH / imgH);
 
-    // Max pan bounds in frame pixel space to guarantee NO empty space inside frame
-    const maxPanX = Math.max(0, (srcW * scaleCover * z - frameW) / 2);
-    const maxPanY = Math.max(0, (srcH * scaleCover * z - frameH) / 2);
+    // Maximum pan in frame-pixel space (guarantees no empty edges)
+    const maxPanPxX = Math.max(0, (imgW * coverScale * z - frameW) / 2);
+    const maxPanPxY = Math.max(0, (imgH * coverScale * z - frameH) / 2);
 
-    const clampedPanX = Math.max(-maxPanX, Math.min(maxPanX, panX || 0));
-    const clampedPanY = Math.max(-maxPanY, Math.min(maxPanY, panY || 0));
+    // Normalize → frame pixels; clamp to safe range
+    const panPxX = Math.max(-maxPanPxX, Math.min(maxPanPxX, (panNX || 0) * maxPanPxX));
+    const panPxY = Math.max(-maxPanPxY, Math.min(maxPanPxY, (panNY || 0) * maxPanPxY));
 
-    const sw = frameW / (scaleCover * z);
-    const sh = frameH / (scaleCover * z);
+    // Source rect dimensions
+    const sw = frameW / (coverScale * z);
+    const sh = frameH / (coverScale * z);
 
-    const centerX = srcW / 2 - clampedPanX / (scaleCover * z);
-    const centerY = srcH / 2 - clampedPanY / (scaleCover * z);
+    // Center of source region to show (pan shifts the window in source space)
+    const centerX = imgW / 2 - panPxX / (coverScale * z);
+    const centerY = imgH / 2 - panPxY / (coverScale * z);
 
-    let sx = centerX - sw / 2;
-    let sy = centerY - sh / 2;
+    let sx = Math.max(0, Math.min(imgW - sw, centerX - sw / 2));
+    let sy = Math.max(0, Math.min(imgH - sh, centerY - sh / 2));
 
-    sx = Math.max(0, Math.min(srcW - sw, sx));
-    sy = Math.max(0, Math.min(srcH - sh, sy));
-
-    return { sx, sy, sw, sh, clampedPanX, clampedPanY };
+    return { sx, sy, sw, sh };
   }
 
   function updateZoom(newZoom) {
@@ -691,11 +737,7 @@
     const clamped = Math.max(1.0, Math.min(3.5, newZoom));
     state.photoZoom = clamped;
     if (zoomSlider) zoomSlider.value = clamped.toFixed(2);
-
-    const crop = getCropRect(state.photoEl.width, state.photoEl.height, 352, 458.4, state.photoPanX, state.photoPanY, state.photoZoom);
-    state.photoPanX = crop.clampedPanX;
-    state.photoPanY = crop.clampedPanY;
-
+    // Normalized pan stays valid across zoom changes — no re-clamp needed.
     drawPreview(state.photoEl);
   }
 
@@ -710,8 +752,8 @@
   }
   if (btnZoomReset) {
     btnZoomReset.addEventListener("click", () => {
-      state.photoPanX = 0;
-      state.photoPanY = 0;
+      state.photoPanNX = 0;
+      state.photoPanNY = 0;
       state.photoZoom = 1.0;
       updateZoom(1.0);
     });
@@ -722,12 +764,26 @@
     const pctx = dropzonePreview.getContext("2d");
     const cw = dropzonePreview.width, ch = dropzonePreview.height;
 
-    const crop = getCropRect(bitmap.width, bitmap.height, 352, 458.4, state.photoPanX || 0, state.photoPanY || 0, state.photoZoom || 1.0);
-    state.photoPanX = crop.clampedPanX;
-    state.photoPanY = crop.clampedPanY;
+    // Use the SAME calculatePortraitTransform that renderCard will use.
+    const crop = calculatePortraitTransform(
+      bitmap.width, bitmap.height,
+      PORTRAIT_FRAME_W, PORTRAIT_FRAME_H,
+      state.photoPanNX || 0, state.photoPanNY || 0,
+      state.photoZoom || 1.0
+    );
 
     pctx.clearRect(0, 0, cw, ch);
     pctx.drawImage(bitmap, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, cw, ch);
+
+    // --- DEBUG DISPLAY (remove after confirming parity) ---
+    const dbg = document.getElementById("portrait-debug");
+    if (dbg) {
+      dbg.textContent =
+        `Zoom: ${(state.photoZoom || 1).toFixed(2)}  ` +
+        `NX: ${(state.photoPanNX || 0).toFixed(3)}  ` +
+        `NY: ${(state.photoPanNY || 0).toFixed(3)}  ` +
+        `Frame: ${PORTRAIT_FRAME_W}×${PORTRAIT_FRAME_H}`;
+    }
   }
 
   let isDraggingPhoto = false;
@@ -759,11 +815,24 @@
     lastPointerX = event.clientX;
     lastPointerY = event.clientY;
 
+    // Convert screen-pixel drag delta → normalized pan increment.
+    // Step 1: screen px → frame px  (preview canvas CSS size → logical frame size)
     const rect = dropzonePreview.getBoundingClientRect();
-    const displayScale = 352 / (rect.width || 290);
+    const frameDX = dx * (PORTRAIT_FRAME_W / (rect.width  || PORTRAIT_FRAME_W));
+    const frameDY = dy * (PORTRAIT_FRAME_H / (rect.height || PORTRAIT_FRAME_H));
 
-    state.photoPanX += dx * displayScale;
-    state.photoPanY += dy * displayScale;
+    // Step 2: frame px → normalized  (divide by max-pan at current zoom)
+    const imgW = state.photoEl.width, imgH = state.photoEl.height;
+    const z    = state.photoZoom || 1.0;
+    const cs   = Math.max(PORTRAIT_FRAME_W / imgW, PORTRAIT_FRAME_H / imgH);
+    const maxPxX = Math.max(0, (imgW * cs * z - PORTRAIT_FRAME_W) / 2);
+    const maxPxY = Math.max(0, (imgH * cs * z - PORTRAIT_FRAME_H) / 2);
+
+    const dNX = maxPxX > 0 ? frameDX / maxPxX : 0;
+    const dNY = maxPxY > 0 ? frameDY / maxPxY : 0;
+
+    state.photoPanNX = Math.max(-1, Math.min(1, (state.photoPanNX || 0) + dNX));
+    state.photoPanNY = Math.max(-1, Math.min(1, (state.photoPanNY || 0) + dNY));
 
     drawPreview(state.photoEl);
   });
@@ -1170,26 +1239,8 @@
   /* =========================================================
      CANVAS RENDER
      ========================================================= */
-  function coverCropRect(srcW, srcH, targetW, targetH, biasX, biasY, zoom = 1.0) {
-    const srcRatio = srcW / srcH;
-    const targetRatio = targetW / targetH;
-    let cw, ch;
-    if (srcRatio > targetRatio) { ch = srcH; cw = ch * targetRatio; }
-    else { cw = srcW; ch = cw / targetRatio; }
-
-    const z = Math.max(1.0, Math.min(3.5, zoom || 1.0));
-    cw = cw / z;
-    ch = ch / z;
-
-    const bx = biasX == null ? 0.5 : biasX;
-    const by = biasY == null ? 0.5 : biasY;
-
-    let cx = srcW * bx - cw / 2;
-    let cy = srcH * by - ch / 2;
-    cx = Math.max(0, Math.min(srcW - cw, cx));
-    cy = Math.max(0, Math.min(srcH - ch, cy));
-    return { sx: cx, sy: cy, sw: cw, sh: ch };
-  }
+  // coverCropRect has been removed. Portrait cropping now uses
+  // calculatePortraitTransform exclusively (see above).
 
   function pickStampPositions() {
     // Official Officer Stamp — placed directly overlapping the photo boundary
@@ -1261,11 +1312,26 @@
     //    photo never extends outside the slot bounds)
     if (state.photoEl) {
       const px0 = PHOTO_RECT.x0 * CANVAS_W, py0 = PHOTO_RECT.y0 * CANVAS_H;
-      const px1 = PHOTO_RECT.x1 * CANVAS_W, py1 = PHOTO_RECT.y1 * CANVAS_H;
-      const pw = px1 - px0, ph = py1 - py0;
+      const pw = PORTRAIT_FRAME_W, ph = PORTRAIT_FRAME_H; // same as editor frame
 
-      const bias = state.photoPosition || state.faceCenter || { x: 0.5, y: 0.42 };
-      const crop = coverCropRect(state.photoEl.width, state.photoEl.height, pw, ph, bias.x, bias.y, state.photoZoom || 1.15);
+      // Use THE SAME calculatePortraitTransform as the editor preview —
+      // this is the single source of truth.  The result is identical because
+      // PORTRAIT_FRAME_W/H matches (PHOTO_RECT.x1 - PHOTO_RECT.x0) * CANVAS_W
+      // and (PHOTO_RECT.y1 - PHOTO_RECT.y0) * CANVAS_H exactly.
+      const crop = calculatePortraitTransform(
+        state.photoEl.width, state.photoEl.height,
+        pw, ph,
+        state.photoPanNX || 0, state.photoPanNY || 0,
+        state.photoZoom || 1.0
+      );
+
+      // Log for debug verification — matches the editor debug display values
+      console.log(
+        `[renderCard] Zoom:${(state.photoZoom||1).toFixed(2)} ` +
+        `NX:${(state.photoPanNX||0).toFixed(3)} ` +
+        `NY:${(state.photoPanNY||0).toFixed(3)} ` +
+        `Frame:${pw}×${ph}`
+      );
 
       ctx.save();
       roundRectPath(ctx, px0, py0, pw, ph, 10);
