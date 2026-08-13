@@ -4,6 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>HH Goa 2026 — Builder ID Generator</title>
+<link rel="icon" type="image/png" href="assets/JOJO-Star.png" />
+<link rel="apple-touch-icon" href="assets/JOJO-Star.png" />
 <meta name="description" content="Turn your photo into an official HH Goa 2026 Builder ID card in seconds. Download it, share it, tag #FrameInGoa." />
 
 <meta property="og:title" content="HH Goa 2026 — Builder ID Generator" />
@@ -22,6 +24,7 @@
 
 <nav class="site-nav" data-entrance="up" data-delay="0" aria-label="Main navigation">
   <a class="brand-lockup" href="./" aria-label="HH Goa 2026 Builder ID home">
+    <img class="nav-star-logo" src="assets/JOJO-Star.png" alt="HH Goa Star" aria-hidden="true" />
     <span class="brand-type">
       <span class="brand-wordmark-wrap">
         <img src="assets/Hacker%20house.png" alt="Hacker House" />
@@ -140,9 +143,18 @@
           <p class="dropzone-hint">JPG, PNG, or HEIC from your iPhone</p>
         </div>
         <canvas id="dropzone-preview" class="dropzone-preview" width="800" height="440" hidden></canvas>
-        <p class="dropzone-adjust-hint">Drag to move · Pinch or scroll to zoom</p>
+        <p class="dropzone-adjust-hint">Drag photo to adjust position</p>
         <p id="dropzone-status" class="dropzone-status" hidden></p>
         <input id="file-input" type="file" accept="image/*,.heic,.heif" hidden />
+      </div>
+
+      <div id="photo-controls" class="photo-controls" hidden>
+        <div class="zoom-bar">
+          <button id="btn-zoom-out" type="button" class="zoom-btn" title="Zoom out" aria-label="Zoom out">−</button>
+          <input id="zoom-slider" type="range" min="1.0" max="3.0" step="0.05" value="1.15" class="zoom-slider" aria-label="Photo zoom level" />
+          <button id="btn-zoom-in" type="button" class="zoom-btn" title="Zoom in" aria-label="Zoom in">+</button>
+          <button id="btn-zoom-reset" type="button" class="zoom-reset-btn" aria-label="Reset photo position">↺ Reset</button>
+        </div>
       </div>
     </div>
 

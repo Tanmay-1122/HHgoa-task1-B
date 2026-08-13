@@ -108,6 +108,11 @@
   const btnShare = $("btn-share");
   const btnRestart = $("btn-restart");
   const toastEl = $("toast");
+  const photoControls = $("photo-controls");
+  const btnZoomIn = $("btn-zoom-in");
+  const btnZoomOut = $("btn-zoom-out");
+  const zoomSlider = $("zoom-slider");
+  const btnZoomReset = $("btn-zoom-reset");
 
   /* =========================================================
      NOTE TEMPLATES — config for text zones within each sticker image.
@@ -193,29 +198,69 @@
      ========================================================= */
   function processStarImageTransparency() {
     const starImg = document.querySelector(".sun-disc");
-    if (!starImg) return;
     const raw = new Image();
     raw.crossOrigin = "anonymous";
     raw.onload = () => {
       try {
         const c = document.createElement("canvas");
-        c.width = raw.naturalWidth;
-        c.height = raw.naturalHeight;
+        const w = raw.naturalWidth;
+        const h = raw.naturalHeight;
+        c.width = w;
+        c.height = h;
         const ctx = c.getContext("2d");
         ctx.drawImage(raw, 0, 0);
-        const imgData = ctx.getImageData(0, 0, c.width, c.height);
+        const imgData = ctx.getImageData(0, 0, w, h);
         const data = imgData.data;
-        for (let i = 0; i < data.length; i += 4) {
-          const r = data[i], g = data[i + 1], b = data[i + 2];
-          if (r > 215 && g > 215 && b > 215) {
-            data[i + 3] = 0;
+
+        let minX = w, maxX = 0, minY = h, maxY = 0;
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            const idx = (y * w + x) * 4;
+            const r = data[idx], g = data[idx + 1], b = data[idx + 2];
+            if (r > 215 && g > 215 && b > 215) {
+              data[idx + 3] = 0;
+            } else if (data[idx + 3] > 0) {
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (y < minY) minY = y;
+              if (y > maxY) maxY = y;
+            }
           }
         }
         ctx.putImageData(imgData, 0, 0);
-        starImg.src = c.toDataURL("image/png");
-        starImg.style.mixBlendMode = "normal";
+        const processedUrl = c.toDataURL("image/png");
+
+        if (starImg) {
+          starImg.src = processedUrl;
+          starImg.style.mixBlendMode = "normal";
+        }
+
+        // Generate high-resolution, tightly-cropped, max-size favicon for browser tab
+        if (maxX > minX && maxY > minY) {
+          const cropW = maxX - minX + 1;
+          const cropH = maxY - minY + 1;
+          const favCanvas = document.createElement("canvas");
+          const favSize = 64;
+          favCanvas.width = favSize;
+          favCanvas.height = favSize;
+          const fctx = favCanvas.getContext("2d");
+
+          const scale = Math.min((favSize - 2) / cropW, (favSize - 2) / cropH);
+          const dw = cropW * scale;
+          const dh = cropH * scale;
+          const dx = (favSize - dw) / 2;
+          const dy = (favSize - dh) / 2;
+
+          fctx.drawImage(c, minX, minY, cropW, cropH, dx, dy, dw, dh);
+          const favDataUrl = favCanvas.toDataURL("image/png");
+
+          const iconLinks = document.querySelectorAll('link[rel="icon"], link[rel="apple-touch-icon"]');
+          iconLinks.forEach(link => {
+            link.href = favDataUrl;
+          });
+        }
       } catch (e) {
-        // Keep CSS mix-blend-mode: multiply as fallback
+        // Keep fallback
       }
     };
     raw.src = "assets/JOJO-Star.png";
@@ -515,11 +560,13 @@
       state.photoEl = bitmap;
       state.faceCenter = await detectFaceCenter(bitmap);
       state.photoPosition = state.faceCenter || { x: 0.5, y: 0.42 };
-      state.photoZoom = 1.0;
+      state.photoZoom = 1.15;
+      if (zoomSlider) zoomSlider.value = "1.15";
 
       drawPreview(bitmap);
       dropzoneEmpty.hidden = true;
       dropzonePreview.hidden = false;
+      if (photoControls) photoControls.hidden = false;
       dropzone.classList.add("has-photo");
       setStatus(null);
       updateGenerateEnabled();
@@ -596,18 +643,42 @@
   // toDataURL involved, just a cover-fit drawImage.
   // Draws straight from the bitmap into the preview <canvas> — again, no
   // toDataURL involved, just a cover-fit drawImage.
+  function updateZoom(newZoom) {
+    if (!state.photoEl) return;
+    const clamped = Math.max(0.8, Math.min(3.5, newZoom));
+    state.photoZoom = clamped;
+    if (zoomSlider) zoomSlider.value = clamped.toFixed(2);
+    drawPreview(state.photoEl);
+  }
+
+  if (btnZoomIn) {
+    btnZoomIn.addEventListener("click", () => updateZoom((state.photoZoom || 1.15) + 0.15));
+  }
+  if (btnZoomOut) {
+    btnZoomOut.addEventListener("click", () => updateZoom((state.photoZoom || 1.15) - 0.15));
+  }
+  if (zoomSlider) {
+    zoomSlider.addEventListener("input", (e) => updateZoom(parseFloat(e.target.value)));
+  }
+  if (btnZoomReset) {
+    btnZoomReset.addEventListener("click", () => {
+      state.photoPosition = state.faceCenter || { x: 0.5, y: 0.42 };
+      updateZoom(1.15);
+    });
+  }
+
   function drawPreview(bitmap) {
     const pctx = dropzonePreview.getContext("2d");
     const cw = dropzonePreview.width, ch = dropzonePreview.height;
     const focus = state.photoPosition || { x: 0.5, y: 0.42 };
-    const crop = coverCropRect(bitmap.width, bitmap.height, cw, ch, focus.x, focus.y, state.photoZoom || 1.0);
+    const crop = coverCropRect(bitmap.width, bitmap.height, cw, ch, focus.x, focus.y, state.photoZoom || 1.15);
     pctx.clearRect(0, 0, cw, ch);
     pctx.drawImage(bitmap, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, cw, ch);
   }
 
   const activePointers = new Map();
   let initialPinchDist = null;
-  let initialZoom = 1.0;
+  let initialZoom = 1.15;
 
   dropzonePreview.addEventListener("pointerdown", (event) => {
     if (!state.photoEl) return;
@@ -621,7 +692,7 @@
     if (activePointers.size === 2) {
       const points = Array.from(activePointers.values());
       initialPinchDist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
-      initialZoom = state.photoZoom || 1.0;
+      initialZoom = state.photoZoom || 1.15;
     }
   });
 
@@ -631,27 +702,21 @@
     activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
     if (activePointers.size >= 2 && initialPinchDist) {
-      // PINCH-TO-ZOOM on touch screen (2 fingers)
       const points = Array.from(activePointers.values());
       const currentDist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
       if (currentDist > 0) {
-        const scale = currentDist / initialPinchDist;
-        state.photoZoom = Math.max(1.0, Math.min(3.5, initialZoom * scale));
-        drawPreview(state.photoEl);
+        updateZoom(initialZoom * (currentDist / initialPinchDist));
       }
     } else if (activePointers.size === 1) {
-      // PAN / DRAG TO MOVE (1 finger / pointer)
       const rect = dropzonePreview.getBoundingClientRect();
       const dx = event.clientX - prev.x;
       const dy = event.clientY - prev.y;
 
       const focus = state.photoPosition || { x: 0.5, y: 0.42 };
-      const currentZoom = state.photoZoom || 1.0;
+      const z = state.photoZoom || 1.15;
 
-      // Natural 1:1 pan with zoom-scaled sensitivity
-      const panSensitivity = 1.0 / (currentZoom * 0.95);
-      focus.x = Math.max(0.02, Math.min(0.98, focus.x - (dx / rect.width) * panSensitivity));
-      focus.y = Math.max(0.02, Math.min(0.98, focus.y - (dy / rect.height) * panSensitivity));
+      focus.x = Math.max(0.0, Math.min(1.0, focus.x - (dx / rect.width) / z));
+      focus.y = Math.max(0.0, Math.min(1.0, focus.y - (dy / rect.height) / z));
 
       state.photoPosition = focus;
       drawPreview(state.photoEl);
@@ -674,13 +739,63 @@
   dropzonePreview.addEventListener("pointerup", stopPhotoDrag);
   dropzonePreview.addEventListener("pointercancel", stopPhotoDrag);
 
+  // Direct Touch Handlers for mobile phones (iOS & Android)
+  dropzonePreview.addEventListener("touchstart", (e) => {
+    if (!state.photoEl) return;
+    if (e.touches.length === 1) {
+      activePointers.set("touch0", { x: e.touches[0].clientX, y: e.touches[0].clientY });
+      dropzone.classList.add("is-photo-dragging");
+    } else if (e.touches.length === 2) {
+      initialPinchDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      initialZoom = state.photoZoom || 1.15;
+    }
+  }, { passive: false });
+
+  dropzonePreview.addEventListener("touchmove", (e) => {
+    if (!state.photoEl) return;
+    e.preventDefault();
+    if (e.touches.length === 2 && initialPinchDist) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      if (dist > 0) {
+        updateZoom(initialZoom * (dist / initialPinchDist));
+      }
+    } else if (e.touches.length === 1 && activePointers.has("touch0")) {
+      const prev = activePointers.get("touch0");
+      const cur = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      activePointers.set("touch0", cur);
+
+      const dx = cur.x - prev.x;
+      const dy = cur.y - prev.y;
+      const rect = dropzonePreview.getBoundingClientRect();
+      const focus = state.photoPosition || { x: 0.5, y: 0.42 };
+      const z = state.photoZoom || 1.15;
+
+      focus.x = Math.max(0.0, Math.min(1.0, focus.x - (dx / rect.width) / z));
+      focus.y = Math.max(0.0, Math.min(1.0, focus.y - (dy / rect.height) / z));
+
+      state.photoPosition = focus;
+      drawPreview(state.photoEl);
+    }
+  }, { passive: false });
+
+  dropzonePreview.addEventListener("touchend", () => {
+    activePointers.delete("touch0");
+    initialPinchDist = null;
+    dropzone.classList.remove("is-photo-dragging");
+  });
+
   // Mouse Wheel / Trackpad scroll zoom
   dropzonePreview.addEventListener("wheel", (event) => {
     if (!state.photoEl) return;
     event.preventDefault();
-    const delta = event.deltaY < 0 ? 0.12 : -0.12;
-    state.photoZoom = Math.max(1.0, Math.min(3.5, (state.photoZoom || 1.0) + delta));
-    drawPreview(state.photoEl);
+    const delta = event.deltaY < 0 ? 0.1 : -0.1;
+    updateZoom((state.photoZoom || 1.15) + delta);
   }, { passive: false });
 
   // Auto-fit only — no manual crop step. Bias the crop toward a detected
@@ -1492,6 +1607,7 @@
     form.reset();
     dropzoneEmpty.hidden = false;
     dropzonePreview.hidden = true;
+    if (photoControls) photoControls.hidden = true;
     dropzone.classList.remove("has-photo", "is-photo-dragging");
     dropzonePreview.getContext("2d").clearRect(0, 0, dropzonePreview.width, dropzonePreview.height);
     updateGenerateEnabled();
