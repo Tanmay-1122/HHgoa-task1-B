@@ -146,7 +146,7 @@
       src: "assets/tempelete2.png",
       fontFamily: '"Caveat", cursive',
       zones: [
-        { x: 0.16, y: 0.18, w: 0.48, h: 0.62, fontWeight: "700", color: "#1a0a00", align: "center", baseFontSize: 42 },
+        { x: 0.16, y: 0.18, w: 0.48, h: 0.62, fontWeight: "700", color: "#1a0a00", align: "center", baseFontSize: 32 },
       ],
     },
     {
@@ -154,7 +154,7 @@
       src: "assets/tempelete3.png",
       fontFamily: '"Caveat", cursive',
       zones: [
-        { x: 0.26, y: 0.20, w: 0.46, h: 0.56, fontWeight: "700", color: "#1a0a00", align: "center", baseFontSize: 44 },
+        { x: 0.26, y: 0.20, w: 0.46, h: 0.56, fontWeight: "700", color: "#1a0a00", align: "center", baseFontSize: 34 },
       ],
     },
   ];
@@ -1484,7 +1484,7 @@
         STICKER_W = Math.round(STICKER_H * aspect);
       } else {
         // Landscape postcard/banner (tempelete2.png / tempelete3.png)
-        STICKER_W = Math.round(CANVAS_W * 0.20);
+        STICKER_W = Math.round(CANVAS_W * 0.23);
         STICKER_H = Math.round(STICKER_W / aspect);
       }
 
@@ -1592,11 +1592,38 @@
     const words = text.split(" ");
     const lines = [];
     let currentLine = "";
+
+    function breakWord(word) {
+      // Break a single word that is wider than maxWidth character by character
+      let part = "";
+      for (const ch of word) {
+        const test = part + ch;
+        if (ctx.measureText(test).width > maxWidth && part) {
+          lines.push(part);
+          part = ch;
+        } else {
+          part = test;
+        }
+      }
+      if (part) {
+        currentLine = part;
+      }
+    }
+
     words.forEach((word) => {
       const testLine = currentLine ? `${currentLine} ${word}` : word;
       if (ctx.measureText(testLine).width > maxWidth && currentLine) {
         lines.push(currentLine);
-        currentLine = word;
+        currentLine = "";
+        // If the word alone is still too wide, break it by character
+        if (ctx.measureText(word).width > maxWidth) {
+          breakWord(word);
+        } else {
+          currentLine = word;
+        }
+      } else if (ctx.measureText(testLine).width > maxWidth) {
+        // No currentLine, but single word still too wide
+        breakWord(word);
       } else {
         currentLine = testLine;
       }
