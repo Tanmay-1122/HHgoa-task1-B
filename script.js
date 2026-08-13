@@ -162,8 +162,8 @@
   /* =========================================================
      NOTE CHARACTER COUNTER
      ========================================================= */
-  const NOTE_MAX_CHARS = 150; // matches maxlength attribute on the textarea
-  const NOTE_NEAR_LIMIT = 130; // warn when this many chars typed
+  const NOTE_MAX_CHARS = 40; // matches maxlength attribute on the textarea
+  const NOTE_NEAR_LIMIT = 35; // warn when this many chars typed
   let noteTemplateImg = null;
   let noteTemplateConfig = null;
 
@@ -175,7 +175,7 @@
   }
 
   inputNote.addEventListener("input", () => {
-    // The browser maxlength attribute already blocks input beyond 150 chars.
+    // The browser maxlength attribute already blocks input beyond 40 chars.
     // Clamp defensively in case of programmatic paste edge-cases.
     if (inputNote.value.length > NOTE_MAX_CHARS) {
       inputNote.value = inputNote.value.slice(0, NOTE_MAX_CHARS);
