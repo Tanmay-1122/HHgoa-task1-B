@@ -146,6 +146,12 @@ body{
   transition:opacity .2s ease;
 }
 .dropzone.has-photo .dropzone-adjust-hint{ opacity:1; }
+.dropzone.has-photo{
+  padding: 0;
+  border-style: solid;
+  border-color: rgba(242, 194, 46, 0.5);
+  cursor: default;
+}
 .dropzone-status{
   position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
   background: rgba(1,30,15,0.55); color:var(--hh-cream); font-size:13px; letter-spacing:0.05em;
@@ -1001,10 +1007,24 @@ body{
 
 .dropzone-preview{
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  height: auto;
+  aspect-ratio: 800 / 440;
+  max-height: 100%;
+  object-fit: contain;
   border-radius: 16px;
   z-index: 2;
+  display: block;
+  cursor: grab;
+  touch-action: none;
+}
+.dropzone-preview:active,
+.dropzone.is-photo-dragging .dropzone-preview{ cursor: grabbing; }
+/* When photo fills the dropzone, stretch the canvas to the container edges */
+.dropzone.has-photo .dropzone-preview{
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  border-radius: 18px;
 }
 
 #panel-result.panel--active{ position:relative; padding:36px; }
