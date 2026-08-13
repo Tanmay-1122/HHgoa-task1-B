@@ -160,48 +160,36 @@
   ];
 
   /* =========================================================
-     NOTE WORD COUNTER
+     NOTE CHARACTER COUNTER
      ========================================================= */
-  const NOTE_MAX_WORDS = 20;
+  const NOTE_MAX_CHARS = 150; // matches maxlength attribute on the textarea
+  const NOTE_NEAR_LIMIT = 130; // warn when this many chars typed
   let noteTemplateImg = null;
   let noteTemplateConfig = null;
 
-  function countWords(text) {
-    return text.trim() === "" ? 0 : text.trim().split(/\s+/).length;
-  }
-
+  // clampNoteToWordLimit is still used when collecting state.note on submit
+  // to trim any runaway paste, but the live counter is character-based.
   function clampNoteToWordLimit(text) {
-    // Split preserving the trailing-space state so cursor doesn't jump.
-    const hasTrailingSpace = /\s$/.test(text);
-    const tokens = text.trim() === "" ? [] : text.trim().split(/\s+/);
-    if (tokens.length <= NOTE_MAX_WORDS) {
-      // At exactly the limit: strip any trailing space that would begin word 21.
-      if (tokens.length === NOTE_MAX_WORDS && hasTrailingSpace) {
-        return tokens.join(" "); // drop the trailing space
-      }
-      return text;
-    }
-    // Over the limit: keep only the first 20 words, no trailing space.
-    return tokens.slice(0, NOTE_MAX_WORDS).join(" ");
+    // Fallback clamp: trim to NOTE_MAX_CHARS if somehow past the limit.
+    return text.slice(0, NOTE_MAX_CHARS);
   }
 
   inputNote.addEventListener("input", () => {
-    // Always clamp first, then count.
-    const clamped = clampNoteToWordLimit(inputNote.value);
-    if (clamped !== inputNote.value) {
-      // Preserve caret position as close to end as possible.
-      inputNote.value = clamped;
+    // The browser maxlength attribute already blocks input beyond 150 chars.
+    // Clamp defensively in case of programmatic paste edge-cases.
+    if (inputNote.value.length > NOTE_MAX_CHARS) {
+      inputNote.value = inputNote.value.slice(0, NOTE_MAX_CHARS);
     }
 
-    const words = countWords(inputNote.value);
-    noteWordCount.textContent = `${words} / ${NOTE_MAX_WORDS} words`;
+    const chars = inputNote.value.length;
+    noteWordCount.textContent = `${chars} / ${NOTE_MAX_CHARS}`;
 
-    if (words >= NOTE_MAX_WORDS) {
+    if (chars >= NOTE_MAX_CHARS) {
       noteWordCount.classList.add("is-at-limit");
       noteWordCount.classList.remove("is-near-limit");
       noteWarn.hidden = false;
       setTimeout(() => { noteWarn.hidden = true; }, 2500);
-    } else if (words >= NOTE_MAX_WORDS - 4) {
+    } else if (chars >= NOTE_NEAR_LIMIT) {
       noteWordCount.classList.add("is-near-limit");
       noteWordCount.classList.remove("is-at-limit");
       noteWarn.hidden = true;
