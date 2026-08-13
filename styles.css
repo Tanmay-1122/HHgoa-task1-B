@@ -1769,21 +1769,25 @@ body {
   padding: 0;
 }
 
-/* ---------- Tactile Passport Dropzone ---------- */
+/* ---------- Tactile Portrait Dropzone (Exact Builder ID Photo Frame) ---------- */
 .dropzone {
   position: relative;
   width: 100%;
-  height: 100%;
-  min-height: 380px;
-  border-radius: 20px;
-  border: 2px dashed rgba(242, 194, 46, 0.4);
+  max-width: 290px;
+  aspect-ratio: 352 / 458.4;
+  height: auto;
+  min-height: 0;
+  margin: 0 auto;
+  border-radius: 14px;
+  border: 2px dashed rgba(242, 194, 46, 0.45);
   background: rgba(1, 30, 15, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   cursor: pointer;
-  padding: 24px;
+  padding: 0;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4);
   transition: border-color .2s ease, background-color .2s ease, transform .2s ease, box-shadow .2s ease;
 }
 
@@ -1792,7 +1796,7 @@ body {
 .dropzone.is-dragover {
   border-color: var(--hh-gold);
   background: rgba(242, 194, 46, 0.08);
-  box-shadow: inset 0 0 0 1px rgba(242, 194, 46, 0.2), 4px 6px 0 rgba(1, 30, 15, 0.3);
+  box-shadow: inset 0 0 0 1px rgba(242, 194, 46, 0.2), 0 20px 40px rgba(0, 0, 0, 0.5);
 }
 
 .dropzone-empty {
@@ -1803,8 +1807,8 @@ body {
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 28px;
-  gap: 12px;
+  padding: 20px;
+  gap: 10px;
   z-index: 3;
   width: 100%;
   height: 100%;
@@ -1813,7 +1817,7 @@ body {
 
 .dropzone-empty svg {
   color: var(--hh-gold);
-  margin-bottom: 4px;
+  margin-bottom: 2px;
   filter: drop-shadow(0 2px 8px rgba(242, 194, 46, 0.3));
   transition: transform .25s cubic-bezier(.2, .8, .2, 1);
 }
@@ -1825,7 +1829,7 @@ body {
 .dropzone-empty p {
   margin: 0;
   font-family: var(--font-ui);
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1.35;
   color: rgba(250, 244, 232, 0.8);
 }
@@ -1833,43 +1837,66 @@ body {
 .dropzone-empty p strong {
   color: var(--hh-cream);
   font-weight: 700;
-  font-size: 18px;
+  font-size: 17px;
 }
 
 .dropzone-hint {
   font-family: var(--font-mono) !important;
-  font-size: 11px !important;
+  font-size: 10px !important;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: rgba(250, 244, 232, 0.5) !important;
-  margin-top: 4px !important;
+  margin-top: 2px !important;
+}
+
+/* Hide empty-state UI completely when hidden attribute or has-photo class is set */
+.dropzone-empty[hidden],
+.dropzone.has-photo .dropzone-empty,
+.dropzone.has-photo .dropzone-hint {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 .dropzone-preview {
   width: 100%;
-  height: auto;
-  aspect-ratio: 800 / 440;
-  max-height: 100%;
-  object-fit: contain;
-  border-radius: 16px;
+  height: 100%;
+  aspect-ratio: 352 / 458.4;
+  object-fit: cover;
+  border-radius: 10px;
   z-index: 2;
   display: block;
   cursor: grab;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
 }
 
 .dropzone-preview:active,
-.dropzone.is-photo-dragging .dropzone-preview {
-  cursor: grabbing;
+.dropzone.is-photo-dragging .dropzone-preview,
+.dropzone.is-photo-dragging {
+  cursor: grabbing !important;
 }
 
-/* When photo fills the dropzone, stretch the canvas to the container edges */
+/* When photo fills the dropzone, match the exact card photo frame border styling */
+.dropzone.has-photo {
+  padding: 0;
+  border: 4px solid #FFFFFF;
+  border-radius: 14px;
+  background: #FAF4E8;
+  cursor: grab;
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(11, 93, 52, 0.25);
+}
+
 .dropzone.has-photo .dropzone-preview {
   width: 100%;
   height: 100%;
-  aspect-ratio: auto;
-  border-radius: 18px;
+  aspect-ratio: 352 / 458.4;
+  border-radius: 10px;
   touch-action: none;
+  cursor: grab;
 }
 
 /* ---------- Photo Zoom & Alignment Controls ---------- */
@@ -1931,6 +1958,21 @@ body {
 .zoom-reset-btn:hover {
   background: rgba(250, 244, 232, 0.15);
   color: var(--hh-gold);
+}
+.zoom-change-btn {
+  background: rgba(242, 194, 46, 0.15);
+  border: 1px solid rgba(242, 194, 46, 0.4);
+  border-radius: 8px;
+  color: var(--hh-gold);
+  font: 600 11px/1 var(--font-mono);
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  touch-action: manipulation;
+}
+.zoom-change-btn:hover {
+  background: rgba(242, 194, 46, 0.3);
+  border-color: var(--hh-gold);
 }
 
 #panel-result.panel--active {

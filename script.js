@@ -113,6 +113,7 @@
   const btnZoomOut = $("btn-zoom-out");
   const zoomSlider = $("zoom-slider");
   const btnZoomReset = $("btn-zoom-reset");
+  const btnChangePhoto = $("btn-change-photo");
 
   /* =========================================================
      NOTE TEMPLATES — config for text zones within each sticker image.
@@ -511,9 +512,15 @@
      UPLOAD HANDLING
      ========================================================= */
   dropzone.addEventListener("click", (event) => {
-    if (event.target === dropzonePreview) return;
+    if (state.photoEl || dropzone.classList.contains("has-photo")) return;
     fileInput.click();
   });
+  if (btnChangePhoto) {
+    btnChangePhoto.addEventListener("click", (e) => {
+      e.stopPropagation();
+      fileInput.click();
+    });
+  }
   dropzone.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
   });
@@ -559,9 +566,16 @@
       if (state.photoEl && state.photoEl.close) state.photoEl.close();
       state.photoEl = bitmap;
       state.faceCenter = await detectFaceCenter(bitmap);
-      state.photoPosition = state.faceCenter || { x: 0.5, y: 0.42 };
-      state.photoZoom = 1.15;
-      if (zoomSlider) zoomSlider.value = "1.15";
+      state.photoZoom = 1.0;
+      if (state.faceCenter) {
+        const scaleCover = Math.max(352 / bitmap.width, 458.4 / bitmap.height);
+        state.photoPanX = -(state.faceCenter.x - 0.5) * bitmap.width * scaleCover;
+        state.photoPanY = -(state.faceCenter.y - 0.5) * bitmap.height * scaleCover;
+      } else {
+        state.photoPanX = 0;
+        state.photoPanY = 0;
+      }
+      if (zoomSlider) zoomSlider.value = "1.00";
 
       drawPreview(bitmap);
       dropzoneEmpty.hidden = true;
@@ -643,160 +657,143 @@
   // toDataURL involved, just a cover-fit drawImage.
   // Draws straight from the bitmap into the preview <canvas> — again, no
   // toDataURL involved, just a cover-fit drawImage.
+  /* =========================================================
+     CROP ENGINE & DRAG STATE (Single Source of Truth)
+     ========================================================= */
+  function getCropRect(srcW, srcH, frameW, frameH, panX, panY, zoom) {
+    const z = Math.max(1.0, Math.min(3.5, zoom || 1.0));
+    const scaleCover = Math.max(frameW / srcW, frameH / srcH);
+
+    // Max pan bounds in frame pixel space to guarantee NO empty space inside frame
+    const maxPanX = Math.max(0, (srcW * scaleCover * z - frameW) / 2);
+    const maxPanY = Math.max(0, (srcH * scaleCover * z - frameH) / 2);
+
+    const clampedPanX = Math.max(-maxPanX, Math.min(maxPanX, panX || 0));
+    const clampedPanY = Math.max(-maxPanY, Math.min(maxPanY, panY || 0));
+
+    const sw = frameW / (scaleCover * z);
+    const sh = frameH / (scaleCover * z);
+
+    const centerX = srcW / 2 - clampedPanX / (scaleCover * z);
+    const centerY = srcH / 2 - clampedPanY / (scaleCover * z);
+
+    let sx = centerX - sw / 2;
+    let sy = centerY - sh / 2;
+
+    sx = Math.max(0, Math.min(srcW - sw, sx));
+    sy = Math.max(0, Math.min(srcH - sh, sy));
+
+    return { sx, sy, sw, sh, clampedPanX, clampedPanY };
+  }
+
   function updateZoom(newZoom) {
     if (!state.photoEl) return;
-    const clamped = Math.max(0.8, Math.min(3.5, newZoom));
+    const clamped = Math.max(1.0, Math.min(3.5, newZoom));
     state.photoZoom = clamped;
     if (zoomSlider) zoomSlider.value = clamped.toFixed(2);
+
+    const crop = getCropRect(state.photoEl.width, state.photoEl.height, 352, 458.4, state.photoPanX, state.photoPanY, state.photoZoom);
+    state.photoPanX = crop.clampedPanX;
+    state.photoPanY = crop.clampedPanY;
+
     drawPreview(state.photoEl);
   }
 
   if (btnZoomIn) {
-    btnZoomIn.addEventListener("click", () => updateZoom((state.photoZoom || 1.15) + 0.15));
+    btnZoomIn.addEventListener("click", () => updateZoom((state.photoZoom || 1.0) + 0.15));
   }
   if (btnZoomOut) {
-    btnZoomOut.addEventListener("click", () => updateZoom((state.photoZoom || 1.15) - 0.15));
+    btnZoomOut.addEventListener("click", () => updateZoom((state.photoZoom || 1.0) - 0.15));
   }
   if (zoomSlider) {
     zoomSlider.addEventListener("input", (e) => updateZoom(parseFloat(e.target.value)));
   }
   if (btnZoomReset) {
     btnZoomReset.addEventListener("click", () => {
-      state.photoPosition = state.faceCenter || { x: 0.5, y: 0.42 };
-      updateZoom(1.15);
+      state.photoPanX = 0;
+      state.photoPanY = 0;
+      state.photoZoom = 1.0;
+      updateZoom(1.0);
     });
   }
 
   function drawPreview(bitmap) {
+    if (!bitmap) return;
     const pctx = dropzonePreview.getContext("2d");
     const cw = dropzonePreview.width, ch = dropzonePreview.height;
-    const focus = state.photoPosition || { x: 0.5, y: 0.42 };
-    const crop = coverCropRect(bitmap.width, bitmap.height, cw, ch, focus.x, focus.y, state.photoZoom || 1.15);
+
+    const crop = getCropRect(bitmap.width, bitmap.height, 352, 458.4, state.photoPanX || 0, state.photoPanY || 0, state.photoZoom || 1.0);
+    state.photoPanX = crop.clampedPanX;
+    state.photoPanY = crop.clampedPanY;
+
     pctx.clearRect(0, 0, cw, ch);
     pctx.drawImage(bitmap, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, cw, ch);
   }
 
-  const activePointers = new Map();
-  let initialPinchDist = null;
-  let initialZoom = 1.15;
+  let isDraggingPhoto = false;
+  let lastPointerX = 0;
+  let lastPointerY = 0;
+  let activePointerId = null;
 
   dropzonePreview.addEventListener("pointerdown", (event) => {
     if (!state.photoEl) return;
     event.preventDefault();
     event.stopPropagation();
+
+    isDraggingPhoto = true;
+    activePointerId = event.pointerId;
+    lastPointerX = event.clientX;
+    lastPointerY = event.clientY;
+
     try { dropzonePreview.setPointerCapture(event.pointerId); } catch {}
-
-    activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     dropzone.classList.add("is-photo-dragging");
-
-    if (activePointers.size === 2) {
-      const points = Array.from(activePointers.values());
-      initialPinchDist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
-      initialZoom = state.photoZoom || 1.15;
-    }
   });
 
   dropzonePreview.addEventListener("pointermove", (event) => {
-    if (!activePointers.has(event.pointerId) || !state.photoEl) return;
-    const prev = activePointers.get(event.pointerId);
-    activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (!isDraggingPhoto || !state.photoEl) return;
+    if (activePointerId !== null && event.pointerId !== activePointerId) return;
+    event.preventDefault();
 
-    if (activePointers.size >= 2 && initialPinchDist) {
-      const points = Array.from(activePointers.values());
-      const currentDist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
-      if (currentDist > 0) {
-        updateZoom(initialZoom * (currentDist / initialPinchDist));
-      }
-    } else if (activePointers.size === 1) {
-      const rect = dropzonePreview.getBoundingClientRect();
-      const dx = event.clientX - prev.x;
-      const dy = event.clientY - prev.y;
+    const dx = event.clientX - lastPointerX;
+    const dy = event.clientY - lastPointerY;
+    lastPointerX = event.clientX;
+    lastPointerY = event.clientY;
 
-      const focus = state.photoPosition || { x: 0.5, y: 0.42 };
-      const z = state.photoZoom || 1.15;
+    const rect = dropzonePreview.getBoundingClientRect();
+    const displayScale = 352 / (rect.width || 290);
 
-      focus.x = Math.max(0.0, Math.min(1.0, focus.x - (dx / rect.width) / z));
-      focus.y = Math.max(0.0, Math.min(1.0, focus.y - (dy / rect.height) / z));
+    state.photoPanX += dx * displayScale;
+    state.photoPanY += dy * displayScale;
 
-      state.photoPosition = focus;
-      drawPreview(state.photoEl);
-    }
+    drawPreview(state.photoEl);
   });
 
   function stopPhotoDrag(event) {
-    if (event && activePointers.has(event.pointerId)) {
-      activePointers.delete(event.pointerId);
-      try { dropzonePreview.releasePointerCapture(event.pointerId); } catch {}
+    if (!isDraggingPhoto) return;
+    isDraggingPhoto = false;
+    if (activePointerId !== null) {
+      try { dropzonePreview.releasePointerCapture(activePointerId); } catch {}
+      activePointerId = null;
     }
-    if (activePointers.size < 2) {
-      initialPinchDist = null;
-    }
-    if (activePointers.size === 0) {
-      dropzone.classList.remove("is-photo-dragging");
-    }
+    dropzone.classList.remove("is-photo-dragging");
   }
 
   dropzonePreview.addEventListener("pointerup", stopPhotoDrag);
   dropzonePreview.addEventListener("pointercancel", stopPhotoDrag);
 
-  // Direct Touch Handlers for mobile phones (iOS & Android)
-  dropzonePreview.addEventListener("touchstart", (e) => {
-    if (!state.photoEl) return;
-    if (e.touches.length === 1) {
-      activePointers.set("touch0", { x: e.touches[0].clientX, y: e.touches[0].clientY });
-      dropzone.classList.add("is-photo-dragging");
-    } else if (e.touches.length === 2) {
-      initialPinchDist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-      initialZoom = state.photoZoom || 1.15;
-    }
-  }, { passive: false });
-
-  dropzonePreview.addEventListener("touchmove", (e) => {
-    if (!state.photoEl) return;
-    e.preventDefault();
-    if (e.touches.length === 2 && initialPinchDist) {
-      const dist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-      if (dist > 0) {
-        updateZoom(initialZoom * (dist / initialPinchDist));
-      }
-    } else if (e.touches.length === 1 && activePointers.has("touch0")) {
-      const prev = activePointers.get("touch0");
-      const cur = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      activePointers.set("touch0", cur);
-
-      const dx = cur.x - prev.x;
-      const dy = cur.y - prev.y;
-      const rect = dropzonePreview.getBoundingClientRect();
-      const focus = state.photoPosition || { x: 0.5, y: 0.42 };
-      const z = state.photoZoom || 1.15;
-
-      focus.x = Math.max(0.0, Math.min(1.0, focus.x - (dx / rect.width) / z));
-      focus.y = Math.max(0.0, Math.min(1.0, focus.y - (dy / rect.height) / z));
-
-      state.photoPosition = focus;
-      drawPreview(state.photoEl);
-    }
-  }, { passive: false });
-
-  dropzonePreview.addEventListener("touchend", () => {
-    activePointers.delete("touch0");
-    initialPinchDist = null;
-    dropzone.classList.remove("is-photo-dragging");
-  });
-
-  // Mouse Wheel / Trackpad scroll zoom
+  // Wheel zoom on desktop
   dropzonePreview.addEventListener("wheel", (event) => {
     if (!state.photoEl) return;
     event.preventDefault();
     const delta = event.deltaY < 0 ? 0.1 : -0.1;
-    updateZoom((state.photoZoom || 1.15) + delta);
+    updateZoom((state.photoZoom || 1.0) + delta);
   }, { passive: false });
+
+  // Prevent canvas click from opening file picker
+  dropzonePreview.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
 
   // Auto-fit only — no manual crop step. Bias the crop toward a detected
   // face when the browser supports it; otherwise a plain center-crop.
@@ -1268,7 +1265,7 @@
       const pw = px1 - px0, ph = py1 - py0;
 
       const bias = state.photoPosition || state.faceCenter || { x: 0.5, y: 0.42 };
-      const crop = coverCropRect(state.photoEl.width, state.photoEl.height, pw, ph, bias.x, bias.y, state.photoZoom || 1.0);
+      const crop = coverCropRect(state.photoEl.width, state.photoEl.height, pw, ph, bias.x, bias.y, state.photoZoom || 1.15);
 
       ctx.save();
       roundRectPath(ctx, px0, py0, pw, ph, 10);

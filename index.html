@@ -142,7 +142,7 @@
           <p><strong>Drop your portrait</strong><br />or tap to browse</p>
           <p class="dropzone-hint">JPG, PNG, or HEIC from your iPhone</p>
         </div>
-        <canvas id="dropzone-preview" class="dropzone-preview" width="800" height="440" hidden></canvas>
+        <canvas id="dropzone-preview" class="dropzone-preview" width="704" height="917" hidden></canvas>
         <p class="dropzone-adjust-hint">Drag photo to adjust position</p>
         <p id="dropzone-status" class="dropzone-status" hidden></p>
         <input id="file-input" type="file" accept="image/*,.heic,.heif" hidden />
@@ -151,9 +151,10 @@
       <div id="photo-controls" class="photo-controls" hidden>
         <div class="zoom-bar">
           <button id="btn-zoom-out" type="button" class="zoom-btn" title="Zoom out" aria-label="Zoom out">−</button>
-          <input id="zoom-slider" type="range" min="1.0" max="3.0" step="0.05" value="1.15" class="zoom-slider" aria-label="Photo zoom level" />
+          <input id="zoom-slider" type="range" min="1.0" max="3.0" step="0.05" value="1.0" class="zoom-slider" aria-label="Photo zoom level" />
           <button id="btn-zoom-in" type="button" class="zoom-btn" title="Zoom in" aria-label="Zoom in">+</button>
           <button id="btn-zoom-reset" type="button" class="zoom-reset-btn" aria-label="Reset photo position">↺ Reset</button>
+          <button id="btn-change-photo" type="button" class="zoom-change-btn" aria-label="Change photo">📷 Change</button>
         </div>
       </div>
     </div>
